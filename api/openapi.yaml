@@ -1,0 +1,547 @@
+openapi: 3.1.0
+info:
+  title: Phase 1 LMS API
+  version: 1.0.0
+  description: Organization-isolated LMS API. All timestamps are UTC and monetary amounts use integer minor units.
+servers:
+  - url: /
+security:
+  - FirebaseBearer: []
+tags:
+  - name: Authentication
+  - name: Organizations
+  - name: Courses
+  - name: Media
+  - name: Learning
+  - name: Assessments
+  - name: Live classes
+  - name: Payments
+  - name: Notifications
+  - name: Reporting
+paths:
+  /health/live:
+    get: {operationId: liveness, security: [], responses: {'200': {$ref: '#/components/responses/OK'}}}
+  /health/ready:
+    get: {operationId: readiness, security: [], responses: {'200': {$ref: '#/components/responses/OK'}, '503': {$ref: '#/components/responses/Problem'}}}
+  /metrics:
+    get: {operationId: metrics, security: [], responses: {'200': {description: Prometheus metrics}}}
+  /api/v1/auth/bootstrap:
+    post: {operationId: bootstrap, tags: [Authentication], responses: {'200': {$ref: '#/components/responses/User'}, '401': {$ref: '#/components/responses/Problem'}, '429': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/auth/me:
+    get: {operationId: authMe, tags: [Authentication], responses: {'200': {$ref: '#/components/responses/User'}, '401': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/auth/revoke-sessions:
+    post: {operationId: revokeSessions, tags: [Authentication], responses: {'204': {description: Revoked}, '403': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/organizations:
+    get: {$ref: '#/components/pathItems/CollectionGet'}
+    post:
+      operationId: createOrganization
+      tags: [Organizations]
+      requestBody: {$ref: '#/components/requestBodies/OrganizationWrite'}
+      responses: {'201': {$ref: '#/components/responses/Organization'}, '403': {$ref: '#/components/responses/Problem'}, '422': {$ref: '#/components/responses/Problem'}}
+  /api/v1/audit-logs:
+    get: {operationId: listAuditLogs, tags: [Organizations], parameters: [{name: organization_id, in: query, required: true, schema: {type: string, format: uuid}}, {$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/Limit'}], responses: {'200': {$ref: '#/components/responses/List'}, '403': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/organizations/{id}:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    get: {operationId: getOrganization, tags: [Organizations], responses: {'200': {$ref: '#/components/responses/Organization'}, '404': {$ref: '#/components/responses/Problem'}}}
+    patch:
+      operationId: updateOrganization
+      tags: [Organizations]
+      requestBody: {$ref: '#/components/requestBodies/OrganizationWrite'}
+      responses: {'200': {$ref: '#/components/responses/Organization'}, '403': {$ref: '#/components/responses/Problem'}}
+  /api/v1/organizations/{id}/members:
+    parameters: [{$ref: '#/components/parameters/ID'}, {$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/Limit'}]
+    get: {operationId: listOrganizationMembers, tags: [Organizations], responses: {'200': {$ref: '#/components/responses/List'}}}
+  /api/v1/organizations/{id}/members/{membershipId}:
+    parameters: [{$ref: '#/components/parameters/ID'}, {name: membershipId, in: path, required: true, schema: {type: string, format: uuid}}]
+    patch: {operationId: updateOrganizationMembership, tags: [Organizations], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/MembershipUpdate'}}}}, responses: {'200': {$ref: '#/components/responses/OK'}, '403': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/organizations/{id}/invitations:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post:
+      operationId: createInvitation
+      tags: [Organizations]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/InvitationWrite'}}}}
+      responses: {'201': {description: Invitation, content: {application/json: {schema: {$ref: '#/components/schemas/Invitation'}}}}, '403': {$ref: '#/components/responses/Problem'}}
+  /api/v1/invitations/accept:
+    post:
+      operationId: acceptInvitation
+      tags: [Organizations]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/InvitationAccept'}}}}
+      responses: {'200': {$ref: '#/components/responses/OK'}, '409': {$ref: '#/components/responses/Problem'}}
+  /api/v1/users:
+    get: {operationId: listUsers, tags: [Organizations], parameters: [{$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/Limit'}], responses: {'200': {$ref: '#/components/responses/List'}}}
+  /api/v1/users/{id}:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    get: {operationId: getUser, tags: [Organizations], responses: {'200': {$ref: '#/components/responses/User'}, '403': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/categories:
+    get: {operationId: listCategories, tags: [Courses], parameters: [{$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/Limit'}], responses: {'200': {$ref: '#/components/responses/List'}}}
+    post:
+      operationId: createCategory
+      tags: [Courses]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CategoryWrite'}}}}
+      responses: {'201': {description: Category, content: {application/json: {schema: {$ref: '#/components/schemas/Category'}}}}}
+  /api/v1/categories/{id}:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    patch: {operationId: updateCategory, tags: [Courses], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CategoryWrite'}}}}, responses: {'200': {$ref: '#/components/responses/OK'}}}
+    delete: {operationId: deleteCategory, tags: [Courses], responses: {'204': {description: Deleted}}}
+  /api/v1/courses:
+    get:
+      operationId: listCourses
+      tags: [Courses]
+      parameters: [{$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/Limit'}, {name: q, in: query, schema: {type: string}}, {name: organization_id, in: query, schema: {type: string, format: uuid}}, {name: category_id, in: query, schema: {type: string, format: uuid}}, {name: level, in: query, schema: {type: string}}]
+      responses: {'200': {$ref: '#/components/responses/List'}}
+    post:
+      operationId: createCourse
+      tags: [Courses]
+      requestBody: {$ref: '#/components/requestBodies/CourseWrite'}
+      responses: {'201': {$ref: '#/components/responses/Course'}, '422': {$ref: '#/components/responses/Problem'}}
+  /api/v1/courses/managed:
+    get:
+      operationId: listManagedCourses
+      tags: [Courses]
+      parameters: [{$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/Limit'}]
+      responses: {'200': {$ref: '#/components/responses/List'}, '403': {$ref: '#/components/responses/Problem'}}
+  /api/v1/courses/{id}:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    get: {operationId: getCourse, tags: [Courses], responses: {'200': {$ref: '#/components/responses/Course'}, '404': {$ref: '#/components/responses/Problem'}}}
+    patch: {operationId: updateCourse, tags: [Courses], requestBody: {$ref: '#/components/requestBodies/CourseWrite'}, responses: {'200': {$ref: '#/components/responses/Course'}, '409': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/courses/{id}/publish:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post: {operationId: publishCourse, tags: [Courses], responses: {'200': {$ref: '#/components/responses/Course'}, '422': {$ref: '#/components/responses/Problem'}}}
+    delete: {operationId: unpublishCourse, tags: [Courses], responses: {'200': {$ref: '#/components/responses/Course'}}}
+  /api/v1/courses/{id}/review:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post: {operationId: submitCourseForReview, tags: [Courses], responses: {'200': {$ref: '#/components/responses/Course'}}}
+  /api/v1/courses/{id}/archive:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post: {operationId: archiveCourse, tags: [Courses], responses: {'200': {$ref: '#/components/responses/Course'}}}
+  /api/v1/courses/{id}/instructors:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post: {operationId: assignInstructor, tags: [Courses], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/InstructorAssignment'}}}}, responses: {'204': {description: Assigned}}}
+    delete: {operationId: removeInstructor, tags: [Courses], parameters: [{name: instructor_id, in: query, required: true, schema: {type: string, format: uuid}}], responses: {'204': {description: Removed}}}
+  /api/v1/courses/{id}/modules:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    get: {operationId: listCourseContent, tags: [Courses], responses: {'200': {$ref: '#/components/responses/List'}}}
+    post: {operationId: createModule, tags: [Courses], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ModuleWrite'}}}}, responses: {'201': {$ref: '#/components/responses/OK'}}}
+  /api/v1/modules/{id}:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    patch: {operationId: updateModule, tags: [Courses], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ModuleWrite'}}}}, responses: {'200': {$ref: '#/components/responses/OK'}}}
+    delete: {operationId: deleteModule, tags: [Courses], responses: {'204': {description: Deleted}}}
+  /api/v1/modules/{id}/lessons:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post: {operationId: createLesson, tags: [Courses], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/LessonWrite'}}}}, responses: {'201': {$ref: '#/components/responses/OK'}}}
+  /api/v1/lessons/{id}:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    get: {operationId: getLesson, tags: [Courses], responses: {'200': {$ref: '#/components/responses/OK'}}}
+    patch: {operationId: updateLesson, tags: [Courses], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/LessonWrite'}}}}, responses: {'200': {$ref: '#/components/responses/OK'}}}
+    delete: {operationId: deleteLesson, tags: [Courses], responses: {'204': {description: Deleted}}}
+  /api/v1/media/upload-intents:
+    post:
+      operationId: createUploadIntent
+      tags: [Media]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UploadIntentWrite'}
+      responses:
+        '201':
+          description: Upload intent
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UploadIntent'}
+  /api/v1/media/upload-intents/{id}/complete:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post: {operationId: completeUploadIntent, tags: [Media], responses: {'202': {$ref: '#/components/responses/OK'}, '409': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/media/{id}/access-url:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post: {operationId: createMediaAccessURL, tags: [Media], responses: {'200': {$ref: '#/components/responses/OK'}, '403': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/courses/{id}/enroll:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post: {operationId: enrollCourse, tags: [Learning], parameters: [{$ref: '#/components/parameters/IdempotencyKey'}], responses: {'201': {description: Enrollment, content: {application/json: {schema: {$ref: '#/components/schemas/Enrollment'}}}}, '409': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/courses/{id}/admin-enroll:
+    parameters: [{$ref: '#/components/parameters/ID'}, {name: student_id, in: query, required: true, schema: {type: string, format: uuid}}]
+    post: {operationId: adminEnrollCourse, tags: [Learning], responses: {'201': {description: Enrollment, content: {application/json: {schema: {$ref: '#/components/schemas/Enrollment'}}}}, '403': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/courses/{id}/students:
+    parameters: [{$ref: '#/components/parameters/ID'}, {$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/Limit'}]
+    get: {operationId: listCourseStudents, tags: [Learning], responses: {'200': {$ref: '#/components/responses/List'}, '403': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/enrollments:
+    get: {operationId: listEnrollments, tags: [Learning], parameters: [{$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/Limit'}], responses: {'200': {$ref: '#/components/responses/List'}}}
+  /api/v1/enrollments/{id}:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    get: {operationId: getEnrollment, tags: [Learning], responses: {'200': {description: Enrollment, content: {application/json: {schema: {$ref: '#/components/schemas/Enrollment'}}}}}}
+    delete: {operationId: cancelEnrollment, tags: [Learning], responses: {'200': {$ref: '#/components/responses/OK'}}}
+  /api/v1/enrollments/{id}/progress:
+    parameters: [{$ref: '#/components/parameters/ID'}, {$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/Limit'}]
+    get: {operationId: getEnrollmentProgress, tags: [Learning], responses: {'200': {$ref: '#/components/responses/OK'}}}
+  /api/v1/enrollments/{id}/lessons/{lessonId}/progress:
+    parameters: [{$ref: '#/components/parameters/ID'}, {name: lessonId, in: path, required: true, schema: {type: string, format: uuid}}]
+    put: {operationId: updateLessonProgress, tags: [Learning], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ProgressWrite'}}}}, responses: {'200': {description: Progress, content: {application/json: {schema: {$ref: '#/components/schemas/Progress'}}}}}}
+  /api/v1/me/resume-learning:
+    get: {operationId: resumeLearning, tags: [Learning], responses: {'200': {$ref: '#/components/responses/OK'}, '404': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/quizzes:
+    get: {operationId: listQuizzes, tags: [Assessments], parameters: [{name: course_id, in: query, required: true, schema: {type: string, format: uuid}}, {$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/Limit'}], responses: {'200': {$ref: '#/components/responses/List'}}}
+    post: {operationId: createQuiz, tags: [Assessments], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/QuizWrite'}}}}, responses: {'201': {$ref: '#/components/responses/OK'}}}
+  /api/v1/quizzes/{id}:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    get: {operationId: getQuiz, tags: [Assessments], responses: {'200': {$ref: '#/components/responses/OK'}}}
+    patch: {operationId: updateQuiz, tags: [Assessments], parameters: [{name: status, in: query, schema: {type: string, enum: [draft, published, archived]}}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/QuizWrite'}}}}, responses: {'200': {$ref: '#/components/responses/OK'}}}
+    delete: {operationId: deleteQuiz, tags: [Assessments], responses: {'204': {description: Deleted}}}
+  /api/v1/quizzes/{id}/questions:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post: {operationId: createQuizQuestion, tags: [Assessments], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/QuestionWrite'}}}}, responses: {'201': {$ref: '#/components/responses/OK'}}}
+  /api/v1/quiz-questions/{id}:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    patch: {operationId: updateQuizQuestion, tags: [Assessments], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/QuestionWrite'}}}}, responses: {'200': {$ref: '#/components/responses/OK'}, '409': {$ref: '#/components/responses/Problem'}}}
+    delete: {operationId: deleteQuizQuestion, tags: [Assessments], responses: {'204': {description: Deleted}, '409': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/quizzes/{id}/attempts:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    get: {operationId: listQuizAttempts, tags: [Assessments], parameters: [{$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/Limit'}], responses: {'200': {$ref: '#/components/responses/List'}}}
+    post: {operationId: startQuizAttempt, tags: [Assessments], responses: {'201': {description: Attempt without answer key, content: {application/json: {schema: {$ref: '#/components/schemas/QuizAttempt'}}}}}}
+  /api/v1/quiz-attempts/{id}/answers:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    put: {operationId: saveQuizAnswer, tags: [Assessments], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AnswerWrite'}}}}, responses: {'200': {$ref: '#/components/responses/OK'}}}
+  /api/v1/quiz-attempts/{id}:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    get: {operationId: getQuizAttemptResult, tags: [Assessments], responses: {'200': {description: Attempt or result according to visibility policy, content: {application/json: {schema: {$ref: '#/components/schemas/QuizAttempt'}}}}, '403': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/quiz-attempts/{id}/submit:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post: {operationId: submitQuizAttempt, tags: [Assessments], responses: {'200': {description: Result, content: {application/json: {schema: {$ref: '#/components/schemas/QuizAttempt'}}}}}}
+  /api/v1/quiz-attempts/{id}/grade:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post: {operationId: gradeQuizAttempt, tags: [Assessments], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/GradeWrite'}}}}, responses: {'200': {$ref: '#/components/responses/OK'}}}
+  /api/v1/assignments:
+    get: {operationId: listAssignments, tags: [Assessments], parameters: [{name: course_id, in: query, required: true, schema: {type: string, format: uuid}}, {$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/Limit'}], responses: {'200': {$ref: '#/components/responses/List'}}}
+    post: {operationId: createAssignment, tags: [Assessments], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AssignmentWrite'}}}}, responses: {'201': {$ref: '#/components/responses/OK'}}}
+  /api/v1/assignments/{id}:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    get: {operationId: getAssignment, tags: [Assessments], responses: {'200': {$ref: '#/components/responses/OK'}}}
+    patch: {operationId: updateAssignment, tags: [Assessments], parameters: [{name: status, in: query, schema: {type: string, enum: [draft, published, archived]}}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AssignmentWrite'}}}}, responses: {'200': {$ref: '#/components/responses/OK'}}}
+    delete: {operationId: deleteAssignment, tags: [Assessments], responses: {'204': {description: Deleted}}}
+  /api/v1/assignments/{id}/submissions:
+    parameters: [{$ref: '#/components/parameters/ID'}, {$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/Limit'}]
+    get: {operationId: listAssignmentSubmissions, tags: [Assessments], responses: {'200': {$ref: '#/components/responses/List'}}}
+    post: {operationId: createAssignmentSubmission, tags: [Assessments], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SubmissionWrite'}}}}, responses: {'201': {$ref: '#/components/responses/OK'}}}
+  /api/v1/assignment-submissions/{id}:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    get: {operationId: getAssignmentSubmission, tags: [Assessments], responses: {'200': {$ref: '#/components/responses/OK'}}}
+    patch: {operationId: updateAssignmentSubmission, tags: [Assessments], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SubmissionWrite'}}}}, responses: {'200': {$ref: '#/components/responses/OK'}}}
+  /api/v1/assignment-submissions/{id}/submit:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post: {operationId: submitAssignment, tags: [Assessments], responses: {'200': {$ref: '#/components/responses/OK'}}}
+  /api/v1/assignment-submissions/{id}/grade:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post: {operationId: gradeAssignment, tags: [Assessments], parameters: [{name: return_for_resubmission, in: query, schema: {type: boolean, default: false}}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/GradeWrite'}}}}, responses: {'200': {$ref: '#/components/responses/OK'}}}
+  /api/v1/live-sessions:
+    get: {operationId: listLiveSessions, tags: [Live classes], parameters: [{name: status, in: query, schema: {type: string}}, {$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/Limit'}], responses: {'200': {$ref: '#/components/responses/List'}}}
+    post: {operationId: createLiveSession, tags: [Live classes], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/LiveSessionWrite'}}}}, responses: {'201': {$ref: '#/components/responses/OK'}}}
+  /api/v1/live-sessions/{id}:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    get: {operationId: getLiveSession, tags: [Live classes], responses: {'200': {$ref: '#/components/responses/OK'}}}
+    patch: {operationId: updateLiveSession, tags: [Live classes], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/LiveSessionWrite'}}}}, responses: {'200': {$ref: '#/components/responses/OK'}}}
+    delete: {operationId: cancelLiveSession, tags: [Live classes], responses: {'200': {$ref: '#/components/responses/OK'}}}
+  /api/v1/live-sessions/{id}/join-token:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post: {operationId: liveSessionJoinToken, tags: [Live classes], responses: {'200': {description: Join token, content: {application/json: {schema: {$ref: '#/components/schemas/JoinToken'}}}}}}
+  /api/v1/live-sessions/{id}/start:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post: {operationId: startLiveSession, tags: [Live classes], responses: {'200': {$ref: '#/components/responses/OK'}}}
+  /api/v1/live-sessions/{id}/end:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post: {operationId: endLiveSession, tags: [Live classes], responses: {'200': {$ref: '#/components/responses/OK'}}}
+  /api/v1/webhooks/livekit:
+    post: {operationId: liveKitWebhook, security: [], tags: [Live classes], responses: {'204': {description: Accepted}, '400': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/orders:
+    get: {operationId: listOrders, tags: [Payments], parameters: [{$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/Limit'}], responses: {'200': {$ref: '#/components/responses/List'}}}
+    post: {operationId: createOrder, tags: [Payments], parameters: [{$ref: '#/components/parameters/IdempotencyKey'}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/OrderWrite'}}}}, responses: {'201': {description: Order, content: {application/json: {schema: {$ref: '#/components/schemas/Order'}}}}, '409': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/orders/{id}:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    get: {operationId: getOrder, tags: [Payments], responses: {'200': {description: Order, content: {application/json: {schema: {$ref: '#/components/schemas/Order'}}}}}}
+    delete: {operationId: cancelOrder, tags: [Payments], responses: {'200': {description: Cancelled order, content: {application/json: {schema: {$ref: '#/components/schemas/Order'}}}}, '409': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/orders/{id}/payment-intent:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post: {operationId: createPaymentIntent, tags: [Payments], responses: {'200': {description: Client secret, content: {application/json: {schema: {$ref: '#/components/schemas/PaymentIntent'}}}}}}
+  /api/v1/payments:
+    get: {operationId: listPayments, tags: [Payments], parameters: [{$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/Limit'}], responses: {'200': {$ref: '#/components/responses/List'}}}
+  /api/v1/webhooks/stripe:
+    post: {operationId: stripeWebhook, security: [], tags: [Payments], responses: {'204': {description: Accepted}, '400': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/results/me:
+    get: {operationId: myResults, tags: [Learning], parameters: [{$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/Limit'}], responses: {'200': {$ref: '#/components/responses/List'}}}
+  /api/v1/certificates:
+    get: {operationId: listCertificates, tags: [Learning], parameters: [{$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/Limit'}], responses: {'200': {$ref: '#/components/responses/List'}}}
+  /api/v1/certificates/{id}/download:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    get: {operationId: downloadCertificate, tags: [Learning], responses: {'302': {description: Short-lived signed URL}}}
+  /api/v1/public/certificates/verify/{code}:
+    parameters: [{name: code, in: path, required: true, schema: {type: string}}]
+    get: {operationId: verifyCertificate, security: [], tags: [Learning], responses: {'200': {description: Safe verification data, content: {application/json: {schema: {$ref: '#/components/schemas/CertificateVerification'}}}}, '404': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/device-tokens:
+    post: {operationId: registerDeviceToken, tags: [Notifications], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DeviceTokenWrite'}}}}, responses: {'201': {$ref: '#/components/responses/OK'}}}
+    delete: {operationId: removeDeviceToken, tags: [Notifications], parameters: [{$ref: '#/components/parameters/IDQuery'}], responses: {'204': {description: Removed}}}
+  /api/v1/notifications:
+    get: {operationId: listNotifications, tags: [Notifications], parameters: [{$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/Limit'}], responses: {'200': {$ref: '#/components/responses/List'}}}
+  /api/v1/notifications/unread-count:
+    get: {operationId: unreadNotificationCount, tags: [Notifications], responses: {'200': {$ref: '#/components/responses/OK'}}}
+  /api/v1/notifications/{id}/read:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post: {operationId: markNotificationRead, tags: [Notifications], responses: {'200': {$ref: '#/components/responses/OK'}}}
+  /api/v1/notifications/read-all:
+    post: {operationId: markAllNotificationsRead, tags: [Notifications], responses: {'204': {description: Marked read}}}
+  /api/v1/reports/overview:
+    get: {operationId: getOverviewReport, tags: [Reporting], parameters: [{$ref: '#/components/parameters/ReportFrom'}, {$ref: '#/components/parameters/ReportTo'}], responses: {'200': {$ref: '#/components/responses/OK'}, '403': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/reports/enrollments:
+    get: {operationId: getEnrollmentsReport, tags: [Reporting], parameters: [{$ref: '#/components/parameters/ReportFrom'}, {$ref: '#/components/parameters/ReportTo'}], responses: {'200': {$ref: '#/components/responses/OK'}, '403': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/reports/completions:
+    get: {operationId: getCompletionsReport, tags: [Reporting], parameters: [{$ref: '#/components/parameters/ReportFrom'}, {$ref: '#/components/parameters/ReportTo'}], responses: {'200': {$ref: '#/components/responses/OK'}, '403': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/reports/assessments:
+    get: {operationId: getAssessmentsReport, tags: [Reporting], parameters: [{$ref: '#/components/parameters/ReportFrom'}, {$ref: '#/components/parameters/ReportTo'}], responses: {'200': {$ref: '#/components/responses/OK'}, '403': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/reports/live-attendance:
+    get: {operationId: getLiveAttendanceReport, tags: [Reporting], parameters: [{$ref: '#/components/parameters/ReportFrom'}, {$ref: '#/components/parameters/ReportTo'}], responses: {'200': {$ref: '#/components/responses/OK'}, '403': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/reports/revenue:
+    get: {operationId: getRevenueReport, tags: [Reporting], parameters: [{$ref: '#/components/parameters/ReportFrom'}, {$ref: '#/components/parameters/ReportTo'}], responses: {'200': {$ref: '#/components/responses/OK'}, '403': {$ref: '#/components/responses/Problem'}}}
+components:
+  securitySchemes:
+    FirebaseBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: Firebase ID token
+      description: Firebase ID token issued to the Flutter client.
+  parameters:
+    ID: {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    IDQuery: {name: id, in: query, required: true, schema: {type: string, format: uuid}}
+    Cursor: {name: cursor, in: query, schema: {type: string}, description: Opaque base64 cursor containing the stable timestamp and UUID tie-breaker.}
+    Limit: {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 25}}
+    ReportFrom: {name: from, in: query, schema: {type: string, format: date-time}}
+    ReportTo: {name: to, in: query, schema: {type: string, format: date-time}}
+    IdempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 8, maxLength: 200}}
+  pathItems:
+    CollectionGet:
+      operationId: listOrganizations
+      tags: [Organizations]
+      parameters: [{$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/Limit'}]
+      responses: {'200': {$ref: '#/components/responses/List'}}
+  requestBodies:
+    OrganizationWrite: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/OrganizationWrite'}}}}
+    CourseWrite: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CourseWrite'}}}}
+  responses:
+    OK: {description: Successful response, content: {application/json: {schema: {type: object, additionalProperties: true}}}}
+    List: {description: Cursor-paginated list, content: {application/json: {schema: {$ref: '#/components/schemas/ListResponse'}}}}
+    User: {description: User, content: {application/json: {schema: {$ref: '#/components/schemas/User'}}}}
+    Organization: {description: Organization, content: {application/json: {schema: {$ref: '#/components/schemas/Organization'}}}}
+    Course: {description: Course, content: {application/json: {schema: {$ref: '#/components/schemas/Course'}}}}
+    Problem: {description: RFC 9457 problem details, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+  schemas:
+    UUID: {type: string, format: uuid}
+    Timestamp: {type: string, format: date-time}
+    Problem:
+      type: object
+      required: [type, title, status]
+      example: {type: about:blank, title: Forbidden, status: 403, detail: active organization membership is required, request_id: 018f4d4e-8b57-7bf0-a250-3bb54f2ab31a}
+      properties:
+        type: {type: string, format: uri-reference}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+        instance: {type: string}
+        request_id: {type: string}
+        errors: {type: array, items: {$ref: '#/components/schemas/FieldError'}}
+    FieldError:
+      type: object
+      required: [field, message]
+      properties: {field: {type: string}, message: {type: string}}
+    ListResponse:
+      type: object
+      required: [items]
+      properties: {items: {type: array, items: {}}, next_cursor: {type: string}}
+    User:
+      type: object
+      required: [id, email, display_name, status, memberships]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+        email: {type: string, format: email}
+        display_name: {type: string}
+        status: {type: string, enum: [active, suspended, deleted]}
+        memberships: {type: array, items: {$ref: '#/components/schemas/Membership'}}
+    Membership:
+      type: object
+      required: [id, organization_id, organization_name, status, roles]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+        organization_id: {$ref: '#/components/schemas/UUID'}
+        organization_name: {type: string}
+        status: {type: string}
+        roles: {type: array, items: {type: string, enum: [super_admin, organization_admin, instructor, student]}}
+    MembershipUpdate:
+      type: object
+      required: [status, roles]
+      properties:
+        status: {type: string, enum: [active, suspended]}
+        roles: {type: array, minItems: 1, uniqueItems: true, items: {type: string, enum: [organization_admin, instructor, student]}}
+    Organization:
+      type: object
+      required: [id, name, slug, status, created_at]
+      properties: {id: {$ref: '#/components/schemas/UUID'}, name: {type: string}, slug: {type: string}, status: {type: string}, created_at: {$ref: '#/components/schemas/Timestamp'}}
+    OrganizationWrite:
+      type: object
+      required: [name, slug]
+      properties: {name: {type: string, minLength: 2, maxLength: 200}, slug: {type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'}}
+    InvitationWrite:
+      type: object
+      required: [email, role]
+      properties: {email: {type: string, format: email}, role: {type: string, enum: [organization_admin, instructor, student]}}
+    InvitationAccept:
+      type: object
+      required: [token]
+      properties: {token: {type: string, minLength: 20}}
+    Invitation:
+      type: object
+      required: [id, email, role, expires_at]
+      properties: {id: {$ref: '#/components/schemas/UUID'}, email: {type: string}, role: {type: string}, token: {type: string, description: Returned only once to the authorized inviter.}, expires_at: {$ref: '#/components/schemas/Timestamp'}}
+    Category:
+      type: object
+      required: [id, name, slug]
+      properties: {id: {$ref: '#/components/schemas/UUID'}, name: {type: string}, slug: {type: string}, description: {type: string}}
+    CategoryWrite:
+      type: object
+      required: [name, slug]
+      properties: {name: {type: string, minLength: 2}, slug: {type: string}, description: {type: string}}
+    Course:
+      type: object
+      required: [id, organization_id, title, slug, description, language, level, status, is_free, price_minor, currency, version]
+      properties:
+        id: {$ref: '#/components/schemas/UUID'}
+        organization_id: {$ref: '#/components/schemas/UUID'}
+        thumbnail_asset_id: {$ref: '#/components/schemas/UUID'}
+        title: {type: string}
+        slug: {type: string}
+        description: {type: string}
+        language: {type: string}
+        level: {type: string, enum: [beginner, intermediate, advanced, all]}
+        status: {type: string, enum: [draft, review, published, archived]}
+        is_free: {type: boolean}
+        price_minor: {type: integer, format: int64}
+        currency: {type: string, minLength: 3, maxLength: 3}
+        version: {type: integer, format: int64}
+    CourseWrite:
+      type: object
+      required: [title, slug, description, language, level, is_free, price_minor, currency, version]
+      properties:
+        title: {type: string, minLength: 2, maxLength: 250}
+        slug: {type: string}
+        description: {type: string}
+        category_id: {$ref: '#/components/schemas/UUID'}
+        thumbnail_asset_id: {$ref: '#/components/schemas/UUID'}
+        language: {type: string}
+        level: {type: string, enum: [beginner, intermediate, advanced, all]}
+        is_free: {type: boolean}
+        price_minor: {type: integer, format: int64, minimum: 0}
+        currency: {type: string, minLength: 3, maxLength: 3}
+        version: {type: integer, format: int64, minimum: 0}
+    InstructorAssignment:
+      type: object
+      required: [instructor_id]
+      properties: {instructor_id: {$ref: '#/components/schemas/UUID'}}
+    ModuleWrite:
+      type: object
+      required: [title, position]
+      properties: {title: {type: string}, description: {type: string}, position: {type: integer, minimum: 1}}
+    LessonWrite:
+      type: object
+      required: [title, lesson_type, position, is_preview, is_required, is_published]
+      properties:
+        title: {type: string}
+        description: {type: string}
+        lesson_type: {type: string, enum: [video, pdf, text, live, quiz, assignment]}
+        media_asset_id: {$ref: '#/components/schemas/UUID'}
+        body: {type: string}
+        position: {type: integer, minimum: 1}
+        is_preview: {type: boolean}
+        is_required: {type: boolean}
+        is_published: {type: boolean}
+        duration_seconds: {type: integer, minimum: 0}
+    UploadIntentWrite:
+      type: object
+      required: [kind, filename, content_type, size_bytes]
+      properties:
+        kind: {type: string, enum: [video, pdf, image, assignment, certificate]}
+        filename: {type: string}
+        content_type: {type: string}
+        size_bytes: {type: integer, format: int64, minimum: 1}
+        checksum_sha256: {type: string, pattern: '^[a-fA-F0-9]{64}$'}
+    UploadIntent:
+      type: object
+      required: [id, media_asset_id, upload_url, expires_at]
+      properties: {id: {$ref: '#/components/schemas/UUID'}, media_asset_id: {$ref: '#/components/schemas/UUID'}, upload_url: {type: string, format: uri}, expires_at: {$ref: '#/components/schemas/Timestamp'}}
+    Enrollment:
+      type: object
+      required: [id, course_id, student_id, status, completion_percentage]
+      properties: {id: {$ref: '#/components/schemas/UUID'}, course_id: {$ref: '#/components/schemas/UUID'}, student_id: {$ref: '#/components/schemas/UUID'}, status: {type: string, enum: [pending_payment, active, completed, expired, cancelled]}, completion_percentage: {type: number}}
+    ProgressWrite:
+      type: object
+      required: [position_seconds, watched_seconds_delta]
+      example: {position_seconds: 540, watched_seconds_delta: 30, manual_complete: false}
+      properties: {position_seconds: {type: integer, minimum: 0}, watched_seconds_delta: {type: integer, minimum: 0, maximum: 120}, manual_complete: {type: boolean}}
+    Progress:
+      type: object
+      required: [lesson_id, state, position_seconds, total_watched_seconds]
+      properties: {lesson_id: {$ref: '#/components/schemas/UUID'}, state: {type: string, enum: [not_started, started, completed]}, position_seconds: {type: integer}, total_watched_seconds: {type: integer}}
+    QuizWrite:
+      type: object
+      required: [course_id, title, attempt_limit, pass_percentage]
+      properties: {course_id: {$ref: '#/components/schemas/UUID'}, lesson_id: {$ref: '#/components/schemas/UUID'}, title: {type: string}, instructions: {type: string}, time_limit_seconds: {type: integer, minimum: 1}, attempt_limit: {type: integer, minimum: 1}, pass_percentage: {type: number, minimum: 0, maximum: 100}, randomize_questions: {type: boolean}, randomize_options: {type: boolean}, available_from: {$ref: '#/components/schemas/Timestamp'}, available_until: {$ref: '#/components/schemas/Timestamp'}, results_visibility: {type: string, enum: [immediate, after_close, manual]}, is_required: {type: boolean}}
+    QuestionWrite:
+      type: object
+      required: [question_type, prompt, points, position, options]
+      properties: {question_type: {type: string, enum: [single, multiple, true_false, short_answer]}, prompt: {type: string}, points: {type: number, minimum: 0.01}, position: {type: integer, minimum: 1}, options: {type: array, items: {$ref: '#/components/schemas/OptionWrite'}}}
+    OptionWrite:
+      type: object
+      required: [text, is_correct, position]
+      properties: {text: {type: string}, is_correct: {type: boolean}, position: {type: integer, minimum: 1}}
+    QuizAttempt:
+      type: object
+      required: [id, quiz_id, attempt_number, status, questions, started_at]
+      properties: {id: {$ref: '#/components/schemas/UUID'}, quiz_id: {$ref: '#/components/schemas/UUID'}, attempt_number: {type: integer}, status: {type: string}, questions: {type: array, items: {type: object, additionalProperties: true}, description: Correct-answer flags are never included before submission.}, started_at: {$ref: '#/components/schemas/Timestamp'}, percentage: {type: number}, passed: {type: boolean}}
+    AnswerWrite:
+      type: object
+      required: [question_id]
+      example: {question_id: 018f4d4e-8b57-7bf0-a250-3bb54f2ab31a, selected_option_ids: [018f4d4e-8b57-7bf0-a250-3bb54f2ab31b]}
+      properties: {question_id: {$ref: '#/components/schemas/UUID'}, selected_option_ids: {type: array, items: {$ref: '#/components/schemas/UUID'}}, text_answer: {type: string}}
+    AssignmentWrite:
+      type: object
+      required: [course_id, title, maximum_score, passing_score, maximum_submissions]
+      properties: {course_id: {$ref: '#/components/schemas/UUID'}, lesson_id: {$ref: '#/components/schemas/UUID'}, title: {type: string}, instructions: {type: string}, attachment_asset_ids: {type: array, items: {$ref: '#/components/schemas/UUID'}}, due_at: {$ref: '#/components/schemas/Timestamp'}, maximum_score: {type: number, minimum: 0.01}, passing_score: {type: number, minimum: 0}, allowed_file_types: {type: array, items: {type: string}}, maximum_submissions: {type: integer, minimum: 1}, is_required: {type: boolean}}
+    SubmissionWrite:
+      type: object
+      properties: {text_content: {type: string}, media_asset_ids: {type: array, items: {$ref: '#/components/schemas/UUID'}}}
+    GradeWrite:
+      type: object
+      required: [points]
+      properties: {points: {type: number, minimum: 0}, feedback: {type: string}, question_id: {$ref: '#/components/schemas/UUID'}}
+    LiveSessionWrite:
+      type: object
+      required: [course_id, title, scheduled_start_at, scheduled_end_at]
+      properties: {course_id: {$ref: '#/components/schemas/UUID'}, title: {type: string}, description: {type: string}, scheduled_start_at: {$ref: '#/components/schemas/Timestamp'}, scheduled_end_at: {$ref: '#/components/schemas/Timestamp'}}
+    JoinToken:
+      type: object
+      required: [token, url, expires_at]
+      properties: {token: {type: string}, url: {type: string, format: uri}, expires_at: {$ref: '#/components/schemas/Timestamp'}}
+    OrderWrite:
+      type: object
+      required: [course_id]
+      example: {course_id: 018f4d4e-8b57-7bf0-a250-3bb54f2ab31a}
+      properties: {course_id: {$ref: '#/components/schemas/UUID'}}
+    Order:
+      type: object
+      required: [id, status, amount_minor, currency]
+      properties: {id: {$ref: '#/components/schemas/UUID'}, status: {type: string}, amount_minor: {type: integer, format: int64}, currency: {type: string}}
+    PaymentIntent:
+      type: object
+      required: [client_secret]
+      properties: {client_secret: {type: string, description: Sensitive ephemeral value; never logged.}}
+    DeviceTokenWrite:
+      type: object
+      required: [token, platform]
+      properties: {token: {type: string}, platform: {type: string, enum: [android, ios, web]}}
+    CertificateVerification:
+      type: object
+      required: [valid, student_name, course_title, organization_name, issued_at, certificate_number]
+      properties: {valid: {type: boolean}, student_name: {type: string}, course_title: {type: string}, organization_name: {type: string}, issued_at: {$ref: '#/components/schemas/Timestamp'}, certificate_number: {type: string}}
