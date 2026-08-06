@@ -4,7 +4,7 @@ Phase-1 learning-management backend implemented as a production-oriented Go modu
 
 ## Architecture
 
-The commands in `cmd/` are composition roots. Business behavior is grouped into identity/users, courses/content/media, enrollment/progress, quizzes/assignments, live classes, payments, notifications, results/certificates, reports, and audit modules. Module services own authorization and state transitions; HTTP handlers validate/translate; `internal/platform` supplies pgx, Redis, JWT, storage, Stripe/mock payment, FCM/log notification, LiveKit, jobs, logging, metrics, and tracing adapters.
+The commands in `cmd/` are composition roots. Business behavior is grouped into identity/users, courses/content/media, enrollment/progress, quizzes/assignments, live classes, payments, notifications, results/certificates, reports, and audit modules. Module services own authorization and state transitions; HTTP handlers validate/translate; `internal/platform` supplies pgx, Redis, JWT, storage, development-only dummy payments, FCM/log notification, LiveKit, jobs, logging, metrics, and tracing adapters.
 
 Important invariants are database-enforced: UUIDv7 primary keys, unique active enrollment/progress/submission/certificate/provider-event keys, ordered content positions, check-constrained states, integer minor-unit money, `timestamptz`, row locks for state transitions, and an outbox written in the same transaction as important events. See [implementation plan](docs/IMPLEMENTATION_PLAN.md), [architecture](docs/architecture.md), and [index map](docs/DATABASE_INDEXES.md).
 
@@ -19,9 +19,9 @@ Pinned generators and verification tools are installed by `make tools`.
 
 ## Environment configuration
 
-Copy `.env.example` to `.env` for non-Compose development and replace every placeholder. The application validates configuration at startup. Production rejects the mock payment provider, development JWT keys, missing storage/LiveKit credentials, short signing/encryption keys, and unsafe Argon2/token lifetimes.
+Copy `.env.example` to `.env` for non-Compose development and replace every placeholder. The application validates configuration at startup. Production startup is intentionally rejected while the service uses the dummy payment gateway; development also rejects missing storage/LiveKit credentials, short signing/encryption keys, and unsafe Argon2/token lifetimes.
 
-The most important required values are `DATABASE_URL`, `REDIS_URL`, `JWT_SIGNING_KEY`, private S3 settings, `DEVICE_TOKEN_ENCRYPTION_KEY`, and provider selections. Do not commit `.env`, Firebase credentials, private keys, or exported data.
+The most important required values are `DATABASE_URL`, `REDIS_URL`, `JWT_SIGNING_KEY`, private S3 settings, `DEVICE_TOKEN_ENCRYPTION_KEY`, and `DUMMY_PAYMENT_WEBHOOK_SECRET`. Do not commit `.env`, Firebase credentials, private keys, or exported data.
 
 ## Local startup
 
@@ -93,11 +93,11 @@ make smoke
 make verify
 ```
 
-Integration tests use Testcontainers PostgreSQL when `TEST_DATABASE_URL` is absent. Set it to reuse a development server; each test creates an isolated schema. The smoke test exercises authentication, course/enrollment/progress, assessments, LiveKit-token authorization, mock payment, completion, and certificate verification.
+Integration tests use Testcontainers PostgreSQL when `TEST_DATABASE_URL` is absent. Set it to reuse a development server; each test creates an isolated schema. The smoke test exercises authentication, course/enrollment/progress, assessments, LiveKit-token authorization, dummy payment, completion, and certificate verification.
 
-## Payment providers
+## Dummy payments
 
-`PAYMENT_PROVIDER=mock` is for development/tests. It uses the same signed, idempotent webhook path and never activates a paid enrollment from a client response. `PAYMENT_PROVIDER=stripe` uses the official Stripe Go SDK; set `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`. Amount and currency are checked against the locked server order before the transaction marks payment paid, activates enrollment, and inserts its outbox event. Provider event IDs are unique.
+Payments are currently development-only. Creating an order returns a dummy confirmation value and never contacts an external processor or accepts card data. A payment succeeds only after a timestamped HMAC event is posted to `/api/v1/payments/webhooks/dummy` with `X-Dummy-Payment-Signature`. Amount and currency are checked against the locked server order before the transaction marks payment paid, activates enrollment, and inserts its outbox event. Dummy event IDs remain unique and replay-safe.
 
 ## Private media: S3 and MinIO
 
@@ -115,11 +115,12 @@ Set `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET`. Tokens are short
 
 ## Deployment on Ubuntu
 
-1. Install Docker/Compose and provision managed or host PostgreSQL, Redis, and private S3 storage.
-2. Create a root-readable `.env.production` outside source control with TLS-enabled database/Redis URLs and randomly generated keys.
-3. Review [production Compose](deploy/docker-compose.production.yml) and [Nginx example](deploy/nginx.conf); replace hostname/certificate paths.
-4. Back up the database, run the one-shot `migrate` service, then roll out API and worker.
-5. Require `/health/ready` before traffic, scrape `/metrics` privately, and forward JSON logs/traces.
+1. Replace the dummy payment adapter with an approved production processor; production startup is deliberately disabled until then.
+2. Install Docker/Compose and provision managed or host PostgreSQL, Redis, and private S3 storage.
+3. Create a root-readable `.env.production` outside source control with TLS-enabled database/Redis URLs and randomly generated keys.
+4. Review [production Compose](deploy/docker-compose.production.yml) and [Nginx example](deploy/nginx.conf); replace hostname/certificate paths.
+5. Back up the database, run the one-shot `migrate` service, then roll out API and worker.
+6. Require `/health/ready` before traffic, scrape `/metrics` privately, and forward JSON logs/traces.
 
 Both images are multi-stage and run as UID 10001. The worker image alone includes FFmpeg. Graceful shutdown stops HTTP/Asynq and closes PostgreSQL, Redis, jobs, and tracing resources.
 

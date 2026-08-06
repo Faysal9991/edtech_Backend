@@ -144,7 +144,7 @@ func (s *Service) Webhook(ctx context.Context, body []byte, signature string) er
 		if inserted == 0 {
 			return nil
 		}
-		if event.Type == "charge.refunded" {
+		if event.Type == "payment.refunded" {
 			var order data.Order
 			orderID, parseErr := uuid.Parse(event.OrderID)
 			if parseErr == nil {
@@ -207,7 +207,7 @@ func (s *Service) Webhook(ctx context.Context, body []byte, signature string) er
 			return errors.New("provider amount or currency does not match order")
 		}
 		switch event.Type {
-		case "payment_intent.succeeded":
+		case "payment.succeeded":
 			if order.Status == "paid" {
 				return nil
 			}
@@ -256,13 +256,9 @@ func (s *Service) Webhook(ctx context.Context, body []byte, signature string) er
 				}
 			}
 			return nil
-		case "payment_intent.payment_failed", "payment_intent.canceled":
+		case "payment.failed":
 			status := "failed"
 			txStatus := "failed"
-			if event.Type == "payment_intent.canceled" {
-				status = "cancelled"
-				txStatus = "cancelled"
-			}
 			_, err = q.CreatePaymentTransaction(ctx, data.CreatePaymentTransactionParams{ID: s.ids.New(), OrderID: order.ID, ProviderTransactionID: event.PaymentIntentID + ":" + event.ID, Kind: "payment", Status: txStatus, AmountMinor: order.AmountMinor, Currency: order.Currency, FailureCode: pgtype.Text{}})
 			if err != nil {
 				return err

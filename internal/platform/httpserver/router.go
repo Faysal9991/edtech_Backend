@@ -92,8 +92,8 @@ func NewRouter(d Dependencies) http.Handler {
 	v1.GET("/courses/:slug", adapt(d.Handlers.Course.PublicDetailBySlug))
 	v1.GET("/certificates/verify/:certificateNumber", adaptNamed(d.Handlers.Certificate.Verify, map[string]string{"certificateNumber": "code"}))
 	v1.GET("/public/certificates/verify/:code", adapt(d.Handlers.Certificate.Verify))
-	v1.POST("/payments/webhooks/stripe", adapt(d.Handlers.Payment.Webhook))
-	v1.POST("/webhooks/stripe", adapt(d.Handlers.Payment.Webhook))
+	v1.POST("/payments/webhooks/dummy", adapt(d.Handlers.Payment.Webhook))
+	v1.POST("/webhooks/dummy", adapt(d.Handlers.Payment.Webhook))
 	v1.POST("/webhooks/livekit", adapt(d.Handlers.LiveClass.Webhook))
 
 	authenticated := v1.Group("")

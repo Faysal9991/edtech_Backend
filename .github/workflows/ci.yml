@@ -37,7 +37,7 @@ jobs:
       S3_BUCKET: lms-private
       JWT_SIGNING_KEY: ci-only-jwt-signing-key-with-32-characters
       DEVICE_TOKEN_ENCRYPTION_KEY: ci-only-device-token-key-with-32-characters
-      PAYMENT_PROVIDER: mock
+      DUMMY_PAYMENT_WEBHOOK_SECRET: ci-dummy-payment-webhook-secret
       NOTIFICATION_PROVIDER: log
     steps:
       - uses: actions/checkout@v4

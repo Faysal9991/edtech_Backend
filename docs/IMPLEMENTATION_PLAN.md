@@ -2,7 +2,7 @@
 
 ## Requirements
 
-Deliver a production-oriented Go modular monolith with a Gin REST API under `/api/v1`, an Asynq worker, PostgreSQL/pgx/sqlc persistence, Redis, private S3-compatible media storage, JWT access and rotating refresh authentication, RBAC, learning workflows, payments, notifications, LiveKit integration, reports, audit records, OpenAPI, containers, operational scripts, and meaningful automated verification. Local development must work without paid credentials through mock payment, notification, and live-class behavior.
+Deliver a production-oriented Go modular monolith with a Gin REST API under `/api/v1`, an Asynq worker, PostgreSQL/pgx/sqlc persistence, Redis, private S3-compatible media storage, JWT access and rotating refresh authentication, RBAC, learning workflows, payments, notifications, LiveKit integration, reports, audit records, OpenAPI, containers, operational scripts, and meaningful automated verification. During development, payments use a local signed dummy adapter and never require processor credentials.
 
 ## Architecture decisions
 
@@ -11,7 +11,7 @@ Deliver a production-oriented Go modular monolith with a Gin REST API under `/ap
 3. Access JWTs are short lived and validated for algorithm, key id, issuer, audience, subject, expiry, and token type. Opaque refresh/reset/verification tokens have at least 256 bits of entropy; only SHA-256 hashes are persisted. Refresh rotation locks the session family and revokes it on reuse.
 4. Argon2id parameters are configuration-backed and encoded into PHC strings so they can be upgraded on login/password change.
 5. Gin owns routing and middleware. Module HTTP adapters remain thin; application services own authorization, resource ownership, enrollment, state transitions, transaction boundaries, and provider interfaces.
-6. Provider selection is configuration-driven: mock or Stripe payments; log or FCM notifications; MinIO or S3-compatible storage; LiveKit tokens only when configured, with a safe local adapter for tests.
+6. Payments use a signed development-only dummy adapter and production startup remains disabled until an approved processor is implemented. Notifications use log or FCM adapters; storage uses MinIO or S3-compatible APIs; LiveKit tokens are locally signed.
 7. The pre-existing LMS implementation is preserved where compatible. Its course, content, enrollment, progress, assessment, media, live-class, payment, notification, result/certificate, report, audit, worker, and generated-query foundations are evolved rather than discarded. Incompatible Firebase authentication, Chi routing, and the old module path are replaced.
 
 ## Module boundaries

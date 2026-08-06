@@ -30,7 +30,7 @@ Indexes follow concrete filters and sort orders. Cursor predicates use the same 
 | all-status order pages | user/created descending/id | `orders_user_cursor_idx` |
 | certificate pages | student/issued descending/id | `certificates_student_cursor_idx` |
 | payment history | order/created descending/id after user-order lookup | `payment_transactions_order_cursor_idx` |
-| Stripe idempotency | provider event and PaymentIntent | payment event unique constraint, `orders_payment_intent_uidx` |
+| Dummy-payment idempotency | signed event and dummy payment ID | payment event unique constraint, `orders_payment_intent_uidx` |
 | unread notifications | user/created where unread | `notifications_unread_idx` |
 | outbox worker | due rows where pending/failed | `outbox_pending_idx` |
 | audit history | organization/created descending/id | `audit_logs_org_created_idx` |

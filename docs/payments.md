@@ -1,4 +1,9 @@
-# Payments
+# Development dummy payments
+
+The current payment adapter is intentionally local-only. It never connects to
+a processor, accepts card information, or represents real settlement.
+`APP_ENV=production` is rejected until an approved production adapter replaces
+it.
 
 ## Purchase flow
 
@@ -7,32 +12,41 @@ sequenceDiagram
   participant App
   participant API
   participant DB
-  participant Stripe
-  App->>API: POST /orders (course_id, Idempotency-Key)
-  API->>DB: read published course price/currency
-  API->>DB: create order + immutable item snapshot
-  App->>API: POST /orders/{id}/payment-intent
-  API->>Stripe: amount/currency + order metadata
-  Stripe-->>API: PaymentIntent + client secret
-  API-->>App: client secret
-  Stripe->>API: signed webhook, raw body
-  API->>DB: lock order, dedupe event, validate amount/currency
-  API->>DB: payment + paid order + active enrollment + outbox
+  participant Dummy as Dummy gateway
+  App->>API: POST /payments/orders + Idempotency-Key
+  API->>DB: snapshot published course price/currency
+  App->>API: POST /payments/orders/{id}/payment-intent
+  API->>Dummy: create in-memory confirmation
+  Dummy-->>App: dummy client secret
+  App->>API: signed payment.succeeded webhook
+  API->>DB: lock order, dedupe, validate amount/currency
+  API->>DB: payment + paid order + enrollment + outbox
 ```
 
-The client never sends an authoritative amount. A mobile success screen cannot activate enrollment. Only a signature-verified `payment_intent.succeeded` webhook can do so.
+The client never sends an authoritative price and a success screen cannot
+activate enrollment. Activation requires a signed, timestamp-bounded webhook:
 
-Development and test use the in-process fake payment adapter, while production always constructs the real Stripe adapter and requires its secrets. The smoke test signs a fake success event, delivers it twice, and verifies that one active enrollment results.
+```http
+POST /api/v1/payments/webhooks/dummy
+X-Dummy-Payment-Signature: t=<unix-seconds>,v1=<hmac-sha256>
+Content-Type: application/json
 
-Provider event IDs, transaction IDs, PaymentIntent IDs, and user/idempotency-key pairs are unique. Duplicate webhook delivery returns success without replaying state changes. Order/payment/enrollment updates share one PostgreSQL transaction.
-
-Webhook testing with Stripe CLI:
-
-```bash
-stripe listen --forward-to localhost:8080/api/v1/webhooks/stripe
-stripe trigger payment_intent.succeeded
+{
+  "id": "dummy_evt_unique",
+  "type": "payment.succeeded",
+  "payment_id": "dummy_pi_<order-uuid>",
+  "order_id": "<order-uuid>",
+  "status": "succeeded",
+  "amount_minor": 100000,
+  "currency": "BDT"
+}
 ```
 
-Use the CLI-provided `whsec_...` only in local environment configuration. Never log `Stripe-Signature`, client secrets, card data, API keys, or webhook secrets.
+The HMAC input is `<timestamp>.<raw-body>` and the key is
+`DUMMY_PAYMENT_WEBHOOK_SECRET`. The supported event types are
+`payment.succeeded`, `payment.failed`, and `payment.refunded`.
 
-Refunds are provider-authoritative records in `refunds` and `payment_transactions`. Expand the provider adapter with an authenticated refund command when automated refund initiation enters product scope; Phase 1 records provider refund events and exposes organization-scoped revenue/refund reporting.
+Event IDs, transaction IDs, dummy payment IDs, and user/idempotency-key pairs
+are unique. Replayed webhooks return success without replaying state changes.
+The smoke test delivers the same signed event twice and verifies that exactly
+one active enrollment results.

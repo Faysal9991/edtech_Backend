@@ -5,7 +5,7 @@ api_url="${PUBLIC_API_URL:-http://localhost:8080}"
 admin_email="${SEED_ADMIN_EMAIL:-admin@lms.local}"
 admin_password="${SEED_ADMIN_PASSWORD:-local-admin-password-change-before-use}"
 demo_password="${SEED_DEMO_PASSWORD:-local-demo-password-change-before-use}"
-stripe_secret="${STRIPE_WEBHOOK_SECRET:-whsec_replace_me}"
+dummy_payment_secret="${DUMMY_PAYMENT_WEBHOOK_SECRET:-local-dummy-payment-webhook-secret-change-me}"
 run_id="$(date +%s)-$$"
 teacher_email="smoke-teacher-${run_id}@example.test"
 student_email="smoke-student-${run_id}@example.test"
@@ -138,13 +138,13 @@ replayed_order_id="$(curl -fsS -X POST "${student_auth[@]}" -H 'Content-Type: ap
 [[ "${order_id}" == "${replayed_order_id}" ]]
 curl -fsS -X POST "${student_auth[@]}" "${api_url}/api/v1/payments/orders/${order_id}/payment-intent" | jq -e '.client_secret | length > 0' >/dev/null
 
-stripe_timestamp="$(date +%s)"
-stripe_event="$(jq -cn --arg event "evt_smoke_${run_id}" --arg order "${order_id}" --arg intent "pi_test_${order_id}" '{id:$event,type:"payment_intent.succeeded",data:{object:{id:$intent,status:"succeeded",amount_received:100000,currency:"bdt",metadata:{order_id:$order}}}}')"
-stripe_signature="$(printf '%s.%s' "${stripe_timestamp}" "${stripe_event}" | openssl dgst -sha256 -hmac "${stripe_secret}" | awk '{print $NF}')"
+dummy_timestamp="$(date +%s)"
+dummy_event="$(jq -cn --arg event "dummy_evt_smoke_${run_id}" --arg order "${order_id}" --arg payment "dummy_pi_${order_id}" '{id:$event,type:"payment.succeeded",payment_id:$payment,order_id:$order,status:"succeeded",amount_minor:100000,currency:"BDT"}')"
+dummy_signature="$(printf '%s.%s' "${dummy_timestamp}" "${dummy_event}" | openssl dgst -sha256 -hmac "${dummy_payment_secret}" | awk '{print $NF}')"
 for _ in 1 2; do
   curl -fsS -o /dev/null -X POST -H 'Content-Type: application/json' \
-    -H "Stripe-Signature: t=${stripe_timestamp},v1=${stripe_signature}" --data "${stripe_event}" \
-    "${api_url}/api/v1/payments/webhooks/stripe"
+    -H "X-Dummy-Payment-Signature: t=${dummy_timestamp},v1=${dummy_signature}" --data "${dummy_event}" \
+    "${api_url}/api/v1/payments/webhooks/dummy"
 done
 curl -fsS "${student_auth[@]}" "${api_url}/api/v1/student/enrollments" | \
   jq -e --arg course "${paid_course_id}" '.items | any(.course_id == $course and .status == "active")' >/dev/null
@@ -154,7 +154,7 @@ for _ in $(seq 1 45); do
   if [[ -n "${certificate_json}" ]]; then
     certificate_number="$(jq -er '.certificate_number' <<<"${certificate_json}")"
     curl -fsS "${api_url}/api/v1/certificates/verify/${certificate_number}" | jq -e '.valid == true' >/dev/null
-    echo "smoke test passed: users, course, enrollment, progress, quiz, assignment, live token, mock payment, and certificate"
+    echo "smoke test passed: users, course, enrollment, progress, quiz, assignment, live token, dummy payment, and certificate"
     exit 0
   fi
   sleep 1

@@ -10,16 +10,23 @@
 
 API and worker processes never apply schema changes. Down migrations support local validation; production rollbacks should normally use a forward-compatible corrective migration.
 
-## Required production configuration
+## Production gate
+
+Production startup is intentionally disabled while payments use the dummy
+adapter. Before a release, implement and verify an approved processor behind
+the existing payment-provider interface, then restore production configuration
+for its credentials and signed webhooks.
+
+## Required production configuration after that gate
 
 - TLS PostgreSQL and Redis connection details
 - randomly generated JWT signing and device-token encryption keys
 - private S3 credentials plus internal and client-visible endpoints when they differ
 - LiveKit URL and API credentials
-- Stripe secret and webhook secret
+- approved payment-processor credentials and webhook verification secret
 - Firebase ADC/workload identity only when `NOTIFICATION_PROVIDER=fcm`
 
-Production validation rejects mock payment, missing required credentials, development key markers, weak token lifetimes, and unsafe Argon2 parameters. Store secrets outside Git, images, Compose files, logs, and infrastructure outputs.
+Production validation currently rejects the dummy payment adapter. It also rejects missing required credentials, development key markers, weak token lifetimes, and unsafe Argon2 parameters. Store secrets outside Git, images, Compose files, logs, and infrastructure outputs.
 
 ## Operations
 
@@ -29,10 +36,10 @@ Use `scripts/backup-postgres.sh` for encrypted-at-rest logical backup workflows 
 
 ## External verification checklist
 
-- Stripe test-mode success, failure, replay, and refund webhooks
+- replacement processor sandbox success, failure, replay, and refund webhooks
 - LiveKit publisher/subscriber grants and signed attendance webhooks
 - S3 signed PUT, HEAD verification, private download, and range requests
 - FCM Android/iOS delivery, invalid-token cleanup, retry, and dead letter
 - OTLP export with no sensitive attributes
 
-Local completion does not require these credentials: mock payment, log notification, local MinIO, and locally signed LiveKit tokens cover the automated path.
+Local completion does not require payment credentials: the signed dummy adapter, log notification, local MinIO, and locally signed LiveKit tokens cover the automated path.

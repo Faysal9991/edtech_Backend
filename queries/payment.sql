@@ -29,11 +29,11 @@ SELECT * FROM orders WHERE user_id=sqlc.arg(user_id)
 ORDER BY created_at DESC,id DESC LIMIT sqlc.arg(page_size);
 
 -- name: CreatePaymentWebhookEvent :execrows
-INSERT INTO payment_webhook_events (id,provider,provider_event_id,event_type,payload,processed_at) VALUES ($1,'stripe',$2,$3,$4,now()) ON CONFLICT(provider,provider_event_id) DO NOTHING;
+INSERT INTO payment_webhook_events (id,provider,provider_event_id,event_type,payload,processed_at) VALUES ($1,'dummy',$2,$3,$4,now()) ON CONFLICT(provider,provider_event_id) DO NOTHING;
 
 -- name: CreatePaymentTransaction :one
 INSERT INTO payment_transactions (id,order_id,provider,provider_transaction_id,kind,status,amount_minor,currency,failure_code)
-VALUES (sqlc.arg(id),sqlc.arg(order_id),'stripe',sqlc.arg(provider_transaction_id),sqlc.arg(kind),sqlc.arg(status),sqlc.arg(amount_minor),sqlc.arg(currency),sqlc.narg(failure_code))
+VALUES (sqlc.arg(id),sqlc.arg(order_id),'dummy',sqlc.arg(provider_transaction_id),sqlc.arg(kind),sqlc.arg(status),sqlc.arg(amount_minor),sqlc.arg(currency),sqlc.narg(failure_code))
 ON CONFLICT(provider_transaction_id) DO UPDATE SET updated_at=now() RETURNING *;
 
 -- name: ListUserPayments :many

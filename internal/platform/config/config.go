@@ -20,8 +20,7 @@ type Config struct {
 	Storage       Storage
 	Firebase      Firebase
 	LiveKit       LiveKit
-	Stripe        Stripe
-	Payment       Payment
+	DummyPayment  DummyPayment
 	URLs          URLs
 	Upload        Upload
 	RateLimit     RateLimit
@@ -102,12 +101,7 @@ type LiveKit struct {
 	APISecret string
 }
 
-type Stripe struct {
-	SecretKey     string
-	WebhookSecret string
-}
-
-type Payment struct{ Provider string }
+type DummyPayment struct{ WebhookSecret string }
 
 type URLs struct {
 	PublicAPI         string
@@ -148,8 +142,7 @@ func Load() (Config, error) {
 		Storage:       Storage{Endpoint: storageEndpoint, PublicEndpoint: value("S3_PUBLIC_ENDPOINT", storageEndpoint), Region: value("S3_REGION", "us-east-1"), Bucket: os.Getenv("S3_BUCKET"), AccessKey: os.Getenv("S3_ACCESS_KEY"), SecretKey: os.Getenv("S3_SECRET_KEY")},
 		Firebase:      Firebase{ProjectID: os.Getenv("FIREBASE_PROJECT_ID"), CredentialsFile: os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")},
 		LiveKit:       LiveKit{URL: os.Getenv("LIVEKIT_URL"), APIKey: os.Getenv("LIVEKIT_API_KEY"), APISecret: os.Getenv("LIVEKIT_API_SECRET")},
-		Stripe:        Stripe{SecretKey: os.Getenv("STRIPE_SECRET_KEY"), WebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET")},
-		Payment:       Payment{Provider: value("PAYMENT_PROVIDER", "mock")},
+		DummyPayment:  DummyPayment{WebhookSecret: os.Getenv("DUMMY_PAYMENT_WEBHOOK_SECRET")},
 		URLs:          URLs{PublicAPI: value("PUBLIC_API_URL", "http://localhost:8080"), CertificateVerify: value("CERTIFICATE_VERIFY_BASE_URL", "http://localhost:8080/api/v1/public/certificates/verify")},
 		Observability: Observability{OTLPEndpoint: os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"), LogLevel: value("LOG_LEVEL", defaultLogLevel(environment))},
 		Notification:  Notification{Provider: value("NOTIFICATION_PROVIDER", "log"), EncryptionKey: os.Getenv("DEVICE_TOKEN_ENCRYPTION_KEY")},
@@ -340,11 +333,8 @@ func (c Config) Validate() error {
 	if c.Password.MemoryKiB < 19*1024 || c.Password.Iterations < 2 || c.Password.Parallelism < 1 || c.Password.SaltBytes < 16 || c.Password.KeyBytes < 32 {
 		return errors.New("Argon2id parameters are below the supported security minimum")
 	}
-	if c.Payment.Provider != "mock" && c.Payment.Provider != "stripe" {
-		return errors.New("PAYMENT_PROVIDER must be mock or stripe")
-	}
-	if len(c.Stripe.WebhookSecret) < 16 {
-		missing = append(missing, "STRIPE_WEBHOOK_SECRET (at least 16 characters, including for signed mock webhooks)")
+	if len(c.DummyPayment.WebhookSecret) < 16 {
+		missing = append(missing, "DUMMY_PAYMENT_WEBHOOK_SECRET (at least 16 characters)")
 	}
 	if c.Notification.Provider != "log" && c.Notification.Provider != "fcm" {
 		return errors.New("NOTIFICATION_PROVIDER must be log or fcm")
@@ -370,14 +360,8 @@ func (c Config) Validate() error {
 		if !validURL(c.URLs.PublicAPI, "https") || !validURL(c.URLs.CertificateVerify, "https") {
 			return errors.New("production public API and certificate verification URLs must use HTTPS")
 		}
-		if c.Payment.Provider == "mock" {
-			return errors.New("PAYMENT_PROVIDER=mock is forbidden in production")
-		}
-		if c.Payment.Provider == "stripe" && (c.Stripe.SecretKey == "" || c.Stripe.WebhookSecret == "") {
-			missing = append(missing, "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET")
-		}
 		if c.Notification.Provider == "fcm" && c.Firebase.ProjectID == "" {
-			missing = append(missing, "FIREBASE_PROJECT_ID")
+			return errors.New("production FCM notifications require FIREBASE_PROJECT_ID")
 		}
 		if strings.Contains(strings.ToLower(c.Auth.SigningKey), "change-me") || strings.Contains(strings.ToLower(c.Auth.SigningKey), "local-only") {
 			return errors.New("JWT_SIGNING_KEY uses a forbidden development value")
@@ -388,6 +372,7 @@ func (c Config) Validate() error {
 				return fmt.Errorf("%s uses a forbidden development value", name)
 			}
 		}
+		return errors.New("the dummy payment provider is development-only; production payments are intentionally disabled")
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required configuration: %s", strings.Join(missing, ", "))

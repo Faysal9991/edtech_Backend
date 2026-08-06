@@ -208,9 +208,24 @@ paths:
     get: {operationId: getPaymentOrder, tags: [Payments], responses: {'200': {description: Owned order, content: {application/json: {schema: {$ref: '#/components/schemas/Order'}}}}, '403': {$ref: '#/components/responses/Problem'}}}
   /api/v1/payments/orders/{id}/payment-intent:
     parameters: [{$ref: '#/components/parameters/ID'}]
-    post: {operationId: createPaymentIntent, tags: [Payments], responses: {'200': {description: Provider client secret, content: {application/json: {schema: {$ref: '#/components/schemas/PaymentIntent'}}}}, '403': {$ref: '#/components/responses/Problem'}}}
-  /api/v1/payments/webhooks/stripe:
-    post: {operationId: stripeWebhook, tags: [Payments], security: [], responses: {'204': {description: Signed idempotent event accepted}, '400': {$ref: '#/components/responses/Problem'}}}
+    post: {operationId: createPaymentIntent, tags: [Payments], responses: {'200': {description: Development dummy confirmation, content: {application/json: {schema: {$ref: '#/components/schemas/PaymentIntent'}}}}, '403': {$ref: '#/components/responses/Problem'}}}
+  /api/v1/payments/webhooks/dummy:
+    post:
+      operationId: dummyPaymentWebhook
+      tags: [Payments]
+      security: []
+      parameters:
+        - name: X-Dummy-Payment-Signature
+          in: header
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DummyPaymentEvent'}
+            example: {id: dummy_evt_123, type: payment.succeeded, payment_id: dummy_pi_019abc, order_id: 01900000-0000-7000-8000-000000000001, status: succeeded, amount_minor: 100000, currency: BDT}
+      responses: {'204': {description: Signed idempotent dummy event accepted}, '400': {$ref: '#/components/responses/Problem'}}
   /api/v1/student/payments:
     get: {operationId: studentPaymentHistory, tags: [Payments], parameters: [{$ref: '#/components/parameters/Cursor'}, {$ref: '#/components/parameters/Limit'}], responses: {'200': {$ref: '#/components/responses/List'}}}
   /api/v1/admin/payments:
@@ -328,6 +343,18 @@ components:
     JoinToken: {type: object, required: [token, url, expires_at], properties: {token: {type: string, description: Sensitive short-lived room token; never log it.}, url: {type: string, format: uri}, expires_at: {$ref: '#/components/schemas/Timestamp'}}}
     OrderWrite: {type: object, required: [course_id], example: {course_id: 018f4d4e-8b57-7bf0-a250-3bb54f2ab31a}, properties: {course_id: {$ref: '#/components/schemas/UUID'}}}
     Order: {type: object, required: [id, status, amount_minor, currency], properties: {id: {$ref: '#/components/schemas/UUID'}, status: {type: string, description: 'pending, requires_action, paid, failed, cancelled, or refunded'}, amount_minor: {type: integer, format: int64}, currency: {type: string}}}
-    PaymentIntent: {type: object, required: [client_secret], properties: {client_secret: {type: string, description: Sensitive ephemeral provider value; never log it.}}}
+    PaymentIntent: {type: object, required: [client_secret], properties: {client_secret: {type: string, description: Development-only dummy confirmation value; never use as proof of payment.}}}
+    DummyPaymentEvent:
+      type: object
+      additionalProperties: false
+      required: [id, type, payment_id, order_id, status, amount_minor, currency]
+      properties:
+        id: {type: string, minLength: 1, maxLength: 200}
+        type: {type: string, enum: [payment.succeeded, payment.failed, payment.refunded]}
+        payment_id: {type: string, minLength: 1, maxLength: 200}
+        order_id: {$ref: '#/components/schemas/UUID'}
+        status: {type: string}
+        amount_minor: {type: integer, format: int64, minimum: 0}
+        currency: {type: string, pattern: '^[A-Z]{3}$'}
     DeviceTokenWrite: {type: object, required: [token, platform], properties: {token: {type: string, description: Sensitive push-provider token; stored encrypted and never logged.}, platform: {type: string, enum: [android, ios, web]}}}
     CertificateVerification: {type: object, required: [valid, student_name, course_title, organization_name, issued_at, certificate_number], properties: {valid: {type: boolean}, student_name: {type: string}, course_title: {type: string}, organization_name: {type: string}, issued_at: {$ref: '#/components/schemas/Timestamp'}, certificate_number: {type: string}}}

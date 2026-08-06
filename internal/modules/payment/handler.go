@@ -219,7 +219,7 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 		httpx.Problem(w, r, 400, "Invalid Webhook", "unable to read webhook payload")
 		return
 	}
-	if err := h.s.Webhook(r.Context(), body, r.Header.Get("Stripe-Signature")); err != nil {
+	if err := h.s.Webhook(r.Context(), body, r.Header.Get("X-Dummy-Payment-Signature")); err != nil {
 		httpx.Problem(w, r, 400, "Invalid Webhook", err.Error())
 		return
 	}

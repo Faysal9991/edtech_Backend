@@ -12,11 +12,9 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	stripe "github.com/stripe/stripe-go/v82"
 )
 
-var ErrInvalidSignature = errors.New("invalid webhook signature")
+var ErrInvalidSignature = errors.New("invalid dummy payment webhook signature")
 
 type IntentInput struct {
 	OrderID        string
@@ -25,11 +23,13 @@ type IntentInput struct {
 	IdempotencyKey string
 	CustomerEmail  string
 }
+
 type Intent struct {
 	ID           string
 	ClientSecret string
 	Status       string
 }
+
 type Event struct {
 	ID              string
 	Type            string
@@ -47,61 +47,69 @@ type Provider interface {
 	ParseWebhook([]byte, string, time.Time) (Event, error)
 }
 
-type Stripe struct {
-	webhookSecret string
-	client        *stripe.Client
+// DummyProvider is an in-process development payment gateway. It preserves
+// production-shaped ordering, webhook verification, and idempotency behavior
+// without calling a real processor or handling card information.
+type DummyProvider struct {
+	intents map[string]Intent
+	secret  string
+	mu      sync.Mutex
 }
 
-func NewStripe(secretKey, webhookSecret string) *Stripe {
-	return &Stripe{webhookSecret: webhookSecret, client: stripe.NewClient(secretKey)}
+func NewDummyProvider(webhookSecret string) *DummyProvider {
+	return &DummyProvider{intents: map[string]Intent{}, secret: webhookSecret}
 }
 
-func (s *Stripe) CreateIntent(ctx context.Context, in IntentInput) (Intent, error) {
-	params := &stripe.PaymentIntentCreateParams{
-		Amount: stripe.Int64(in.AmountMinor), Currency: stripe.String(strings.ToLower(in.Currency)),
-		AutomaticPaymentMethods: &stripe.PaymentIntentCreateAutomaticPaymentMethodsParams{Enabled: stripe.Bool(true)},
-		Metadata:                map[string]string{"order_id": in.OrderID},
+func (p *DummyProvider) CreateIntent(_ context.Context, in IntentInput) (Intent, error) {
+	if in.OrderID == "" || in.AmountMinor <= 0 || strings.TrimSpace(in.Currency) == "" {
+		return Intent{}, errors.New("dummy payment intent requires an order, positive amount, and currency")
 	}
-	if in.CustomerEmail != "" {
-		params.ReceiptEmail = stripe.String(in.CustomerEmail)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if existing, ok := p.intents[in.OrderID]; ok {
+		return existing, nil
 	}
-	params.SetIdempotencyKey(in.IdempotencyKey)
-	result, err := s.client.V1PaymentIntents.Create(ctx, params)
-	if err != nil {
-		return Intent{}, fmt.Errorf("create Stripe payment intent: %w", err)
+	intent := Intent{
+		ID:           "dummy_pi_" + in.OrderID,
+		ClientSecret: "dummy_client_secret_" + in.OrderID,
+		Status:       "requires_confirmation",
 	}
-	if result == nil || result.ID == "" || result.ClientSecret == "" {
-		return Intent{}, errors.New("Stripe response missing payment intent data")
-	}
-	return Intent{ID: result.ID, ClientSecret: result.ClientSecret, Status: string(result.Status)}, nil
+	p.intents[in.OrderID] = intent
+	return intent, nil
 }
-func (s *Stripe) CancelIntent(ctx context.Context, id string) error {
+
+func (p *DummyProvider) CancelIntent(_ context.Context, id string) error {
 	if id == "" {
 		return nil
 	}
-	_, err := s.client.V1PaymentIntents.Cancel(ctx, id, &stripe.PaymentIntentCancelParams{})
-	if err != nil {
-		return fmt.Errorf("cancel Stripe payment intent: %w", err)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for orderID, intent := range p.intents {
+		if intent.ID == id {
+			intent.Status = "cancelled"
+			p.intents[orderID] = intent
+			return nil
+		}
 	}
 	return nil
 }
 
-func (s *Stripe) ParseWebhook(payload []byte, signature string, now time.Time) (Event, error) {
-	timestamp, signatures, err := parseStripeSignature(signature)
+func (p *DummyProvider) ParseWebhook(payload []byte, signature string, now time.Time) (Event, error) {
+	timestamp, signatures, err := parseSignature(signature)
 	if err != nil {
 		return Event{}, ErrInvalidSignature
 	}
 	if delta := now.Sub(time.Unix(timestamp, 0)); delta > 5*time.Minute || delta < -5*time.Minute {
 		return Event{}, ErrInvalidSignature
 	}
-	mac := hmac.New(sha256.New, []byte(s.webhookSecret))
+	mac := hmac.New(sha256.New, []byte(p.secret))
 	_, _ = mac.Write([]byte(strconv.FormatInt(timestamp, 10) + "."))
 	_, _ = mac.Write(payload)
 	expected := mac.Sum(nil)
 	valid := false
 	for _, candidate := range signatures {
-		decoded, err := hex.DecodeString(candidate)
-		if err == nil && hmac.Equal(decoded, expected) {
+		decoded, decodeErr := hex.DecodeString(candidate)
+		if decodeErr == nil && hmac.Equal(decoded, expected) {
 			valid = true
 			break
 		}
@@ -109,10 +117,10 @@ func (s *Stripe) ParseWebhook(payload []byte, signature string, now time.Time) (
 	if !valid {
 		return Event{}, ErrInvalidSignature
 	}
-	return decodeStripeEvent(payload)
+	return decodeDummyEvent(payload)
 }
 
-func parseStripeSignature(raw string) (int64, []string, error) {
+func parseSignature(raw string) (int64, []string, error) {
 	var timestamp int64
 	var signatures []string
 	for _, part := range strings.Split(raw, ",") {
@@ -133,71 +141,33 @@ func parseStripeSignature(raw string) (int64, []string, error) {
 	return timestamp, signatures, nil
 }
 
-func decodeStripeEvent(payload []byte) (Event, error) {
+func decodeDummyEvent(payload []byte) (Event, error) {
 	var envelope struct {
-		ID   string `json:"id"`
-		Type string `json:"type"`
-		Data struct {
-			Object struct {
-				ID             string            `json:"id"`
-				PaymentIntent  string            `json:"payment_intent"`
-				Status         string            `json:"status"`
-				AmountReceived int64             `json:"amount_received"`
-				Amount         int64             `json:"amount"`
-				AmountRefunded int64             `json:"amount_refunded"`
-				Currency       string            `json:"currency"`
-				Metadata       map[string]string `json:"metadata"`
-			} `json:"object"`
-		} `json:"data"`
+		ID          string `json:"id"`
+		Type        string `json:"type"`
+		PaymentID   string `json:"payment_id"`
+		OrderID     string `json:"order_id"`
+		Status      string `json:"status"`
+		AmountMinor int64  `json:"amount_minor"`
+		Currency    string `json:"currency"`
 	}
 	if err := json.Unmarshal(payload, &envelope); err != nil {
-		return Event{}, fmt.Errorf("decode Stripe webhook: %w", err)
+		return Event{}, fmt.Errorf("decode dummy payment webhook: %w", err)
 	}
-	if envelope.ID == "" || envelope.Type == "" {
-		return Event{}, errors.New("Stripe webhook missing id or type")
+	if envelope.ID == "" || envelope.Type == "" || envelope.PaymentID == "" || envelope.OrderID == "" {
+		return Event{}, errors.New("dummy payment webhook is missing required fields")
 	}
-	amount := envelope.Data.Object.AmountReceived
-	if envelope.Type == "charge.refunded" && envelope.Data.Object.AmountRefunded > 0 {
-		amount = envelope.Data.Object.AmountRefunded
+	if envelope.Type != "payment.succeeded" && envelope.Type != "payment.refunded" && envelope.Type != "payment.failed" {
+		return Event{}, errors.New("unsupported dummy payment event type")
 	}
-	if amount == 0 {
-		amount = envelope.Data.Object.Amount
-	}
-	paymentIntentID := envelope.Data.Object.ID
-	if envelope.Type == "charge.refunded" && envelope.Data.Object.PaymentIntent != "" {
-		paymentIntentID = envelope.Data.Object.PaymentIntent
-	}
-	return Event{ID: envelope.ID, Type: envelope.Type, PaymentIntentID: paymentIntentID, OrderID: envelope.Data.Object.Metadata["order_id"], Status: envelope.Data.Object.Status, AmountMinor: amount, Currency: strings.ToUpper(envelope.Data.Object.Currency), Raw: append(json.RawMessage(nil), payload...)}, nil
-}
-
-type FakeProvider struct {
-	Intents map[string]Intent
-	Secret  string
-	mu      sync.Mutex
-}
-
-func NewFakeProvider(secret string) *FakeProvider {
-	return &FakeProvider{Intents: map[string]Intent{}, Secret: secret}
-}
-func (f *FakeProvider) CreateIntent(_ context.Context, in IntentInput) (Intent, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	intent := Intent{ID: "pi_test_" + in.OrderID, ClientSecret: "pi_test_secret", Status: "requires_payment_method"}
-	f.Intents[in.OrderID] = intent
-	return intent, nil
-}
-func (f *FakeProvider) CancelIntent(_ context.Context, id string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for key, intent := range f.Intents {
-		if intent.ID == id {
-			intent.Status = "canceled"
-			f.Intents[key] = intent
-			return nil
-		}
-	}
-	return nil
-}
-func (f *FakeProvider) ParseWebhook(body []byte, sig string, now time.Time) (Event, error) {
-	return NewStripe("", f.Secret).ParseWebhook(body, sig, now)
+	return Event{
+		ID:              envelope.ID,
+		Type:            envelope.Type,
+		PaymentIntentID: envelope.PaymentID,
+		OrderID:         envelope.OrderID,
+		Status:          envelope.Status,
+		AmountMinor:     envelope.AmountMinor,
+		Currency:        strings.ToUpper(envelope.Currency),
+		Raw:             append(json.RawMessage(nil), payload...),
+	}, nil
 }

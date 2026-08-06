@@ -10,14 +10,14 @@ flowchart LR
   API --> PG[(PostgreSQL)]
   API --> Redis[(Redis / Asynq)]
   API -->|presigned URLs| S3[(Private S3 / MinIO)]
-  API --> Stripe
+  API --> DummyPayment[Development dummy payment adapter]
   API --> LiveKit
   PG -->|outbox rows| Worker[Asynq worker]
   Redis --> Worker
   Worker --> S3
   Worker --> FCM
   Worker --> PG
-  Stripe -->|signed raw webhook| API
+  DummyPayment -->|signed local webhook| API
   LiveKit -->|signed webhook| API
 ```
 

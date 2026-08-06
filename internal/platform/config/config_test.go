@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -15,8 +16,7 @@ func validConfig() Config {
 		Storage:       Storage{Endpoint: "http://storage", PublicEndpoint: "http://storage", Bucket: "test", AccessKey: "access", SecretKey: "0123456789012345", SignedURLTTL: time.Minute},
 		Upload:        Upload{MaxVideoBytes: 1, MaxPDFBytes: 1, MaxImageBytes: 1},
 		RateLimit:     RateLimit{Requests: 1, Window: time.Second},
-		Payment:       Payment{Provider: "mock"},
-		Stripe:        Stripe{WebhookSecret: "0123456789012345"},
+		DummyPayment:  DummyPayment{WebhookSecret: "0123456789012345"},
 		LiveKit:       LiveKit{URL: "ws://livekit", APIKey: "key", APISecret: "0123456789012345"},
 		Notification:  Notification{Provider: "log", EncryptionKey: "12345678901234567890123456789012"},
 		Observability: Observability{LogLevel: "info"},
@@ -24,12 +24,16 @@ func validConfig() Config {
 	}
 }
 
-func TestProductionRejectsMockPaymentAndDevelopmentJWTKey(t *testing.T) {
+func TestProductionRejectsDummyPayment(t *testing.T) {
 	cfg := validConfig()
 	cfg.App.Environment = "production"
-	cfg.Auth.SigningKey = "local-only-change-me-01234567890123456789"
-	if err := cfg.Validate(); err == nil {
-		t.Fatal("expected production development settings to be rejected")
+	cfg.Storage.Endpoint = "https://storage.example.test"
+	cfg.Storage.PublicEndpoint = "https://storage.example.test"
+	cfg.LiveKit.URL = "wss://livekit.example.test"
+	cfg.URLs.PublicAPI = "https://api.example.test"
+	cfg.URLs.CertificateVerify = "https://api.example.test/certificates/verify"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "dummy payment") {
+		t.Fatal("dummy payments must never be accepted in production")
 	}
 }
 

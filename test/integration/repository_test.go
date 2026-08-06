@@ -201,7 +201,7 @@ func TestSchemaIsolationAndIdempotency(t *testing.T) {
 		t.Fatalf("certificate issuance was not idempotent: first=%s second=%s err=%v", firstCertificate.ID, secondCertificate.ID, err)
 	}
 	eventID := ids.New()
-	params := data.CreatePaymentWebhookEventParams{ID: eventID, ProviderEventID: "evt_replayed", EventType: "payment_intent.succeeded", Payload: []byte(`{}`)}
+	params := data.CreatePaymentWebhookEventParams{ID: eventID, ProviderEventID: "evt_replayed", EventType: "payment.succeeded", Payload: []byte(`{}`)}
 	first, err := q.CreatePaymentWebhookEvent(ctx, params)
 	if err != nil {
 		t.Fatal(err)

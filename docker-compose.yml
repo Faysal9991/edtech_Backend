@@ -89,14 +89,12 @@ services:
       S3_ACCESS_KEY: minioadmin
       S3_SECRET_KEY: change-me-now
       S3_FORCE_PATH_STYLE: "true"
-      PAYMENT_PROVIDER: mock
+      DUMMY_PAYMENT_WEBHOOK_SECRET: local-dummy-payment-webhook-secret-change-me
       NOTIFICATION_PROVIDER: log
       DEVICE_TOKEN_ENCRYPTION_KEY: local-only-device-token-key-change-me-123456
       LIVEKIT_URL: ws://livekit:7880
       LIVEKIT_API_KEY: local-livekit-key
       LIVEKIT_API_SECRET: local-livekit-secret-change-me
-      STRIPE_SECRET_KEY: sk_test_replace_me
-      STRIPE_WEBHOOK_SECRET: whsec_replace_me
       WORKER_CONCURRENCY: 5
       LOG_LEVEL: debug
       SEED_ORGANIZATION_NAME: LMS Development

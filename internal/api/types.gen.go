@@ -147,6 +147,27 @@ func (e DeviceTokenWritePlatform) Valid() bool {
 	}
 }
 
+// Defines values for DummyPaymentEventType.
+const (
+	PaymentFailed    DummyPaymentEventType = "payment.failed"
+	PaymentRefunded  DummyPaymentEventType = "payment.refunded"
+	PaymentSucceeded DummyPaymentEventType = "payment.succeeded"
+)
+
+// Valid indicates whether the value is a known member of the DummyPaymentEventType enum.
+func (e DummyPaymentEventType) Valid() bool {
+	switch e {
+	case PaymentFailed:
+		return true
+	case PaymentRefunded:
+		return true
+	case PaymentSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EnrollmentStatus.
 const (
 	EnrollmentStatusActive         EnrollmentStatus = "active"
@@ -686,6 +707,20 @@ type DeviceTokenWrite struct {
 // DeviceTokenWritePlatform defines model for DeviceTokenWrite.Platform.
 type DeviceTokenWritePlatform string
 
+// DummyPaymentEvent defines model for DummyPaymentEvent.
+type DummyPaymentEvent struct {
+	AmountMinor int64                 `json:"amount_minor"`
+	Currency    string                `json:"currency"`
+	Id          string                `json:"id"`
+	OrderId     UUID                  `json:"order_id"`
+	PaymentId   string                `json:"payment_id"`
+	Status      string                `json:"status"`
+	Type        DummyPaymentEventType `json:"type"`
+}
+
+// DummyPaymentEventType defines model for DummyPaymentEvent.Type.
+type DummyPaymentEventType string
+
 // Enrollment defines model for Enrollment.
 type Enrollment struct {
 	CompletionPercentage float32          `json:"completion_percentage"`
@@ -843,7 +878,7 @@ type OrganizationWrite struct {
 
 // PaymentIntent defines model for PaymentIntent.
 type PaymentIntent struct {
-	// ClientSecret Sensitive ephemeral provider value; never log it.
+	// ClientSecret Development-only dummy confirmation value; never use as proof of payment.
 	ClientSecret string `json:"client_secret"`
 }
 
@@ -1153,6 +1188,11 @@ type CreatePaymentOrderParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// DummyPaymentWebhookParams defines parameters for DummyPaymentWebhook.
+type DummyPaymentWebhookParams struct {
+	XDummyPaymentSignature string `json:"X-Dummy-Payment-Signature"`
+}
+
 // StudentCertificatesParams defines parameters for StudentCertificates.
 type StudentCertificatesParams struct {
 	// Cursor Opaque timestamp and UUID tie-breaker.
@@ -1287,6 +1327,9 @@ type CreateUploadIntentJSONRequestBody = UploadIntentWrite
 
 // CreatePaymentOrderJSONRequestBody defines body for CreatePaymentOrder for application/json ContentType.
 type CreatePaymentOrderJSONRequestBody = OrderWrite
+
+// DummyPaymentWebhookJSONRequestBody defines body for DummyPaymentWebhook for application/json ContentType.
+type DummyPaymentWebhookJSONRequestBody = DummyPaymentEvent
 
 // StudentCreateSubmissionJSONRequestBody defines body for StudentCreateSubmission for application/json ContentType.
 type StudentCreateSubmissionJSONRequestBody = SubmissionWrite

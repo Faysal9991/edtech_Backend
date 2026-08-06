@@ -82,12 +82,7 @@ func run() error {
 	jobs := queue.NewClient(cfg.Redis)
 	defer func() { _ = jobs.Close() }()
 	liveProvider := platformlivekit.New(cfg.LiveKit.APIKey, cfg.LiveKit.APISecret)
-	var paymentProvider platformpayment.Provider
-	if cfg.Payment.Provider == "stripe" {
-		paymentProvider = platformpayment.NewStripe(cfg.Stripe.SecretKey, cfg.Stripe.WebhookSecret)
-	} else {
-		paymentProvider = platformpayment.NewFakeProvider(cfg.Stripe.WebhookSecret)
-	}
+	paymentProvider := platformpayment.NewDummyProvider(cfg.DummyPayment.WebhookSecret)
 	var sender platformnotification.Sender
 	if cfg.Notification.Provider == "fcm" {
 		sender, err = platformnotification.NewFCM(ctx, cfg.Firebase.ProjectID)

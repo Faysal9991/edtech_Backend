@@ -88,7 +88,7 @@ func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams
 
 const createPaymentTransaction = `-- name: CreatePaymentTransaction :one
 INSERT INTO payment_transactions (id,order_id,provider,provider_transaction_id,kind,status,amount_minor,currency,failure_code)
-VALUES ($1,$2,'stripe',$3,$4,$5,$6,$7,$8)
+VALUES ($1,$2,'dummy',$3,$4,$5,$6,$7,$8)
 ON CONFLICT(provider_transaction_id) DO UPDATE SET updated_at=now() RETURNING id, order_id, provider, provider_transaction_id, kind, status, amount_minor, currency, failure_code, created_at, updated_at
 `
 
@@ -132,7 +132,7 @@ func (q *Queries) CreatePaymentTransaction(ctx context.Context, arg CreatePaymen
 }
 
 const createPaymentWebhookEvent = `-- name: CreatePaymentWebhookEvent :execrows
-INSERT INTO payment_webhook_events (id,provider,provider_event_id,event_type,payload,processed_at) VALUES ($1,'stripe',$2,$3,$4,now()) ON CONFLICT(provider,provider_event_id) DO NOTHING
+INSERT INTO payment_webhook_events (id,provider,provider_event_id,event_type,payload,processed_at) VALUES ($1,'dummy',$2,$3,$4,now()) ON CONFLICT(provider,provider_event_id) DO NOTHING
 `
 
 type CreatePaymentWebhookEventParams struct {
