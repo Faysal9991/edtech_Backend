@@ -8,16 +8,16 @@ import (
 	"strings"
 	"time"
 
-	api "github.com/Faysal9991/edtech_Backend/internal/api"
-	"github.com/Faysal9991/edtech_Backend/internal/data"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/clock"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/config"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/database"
-	platformid "github.com/Faysal9991/edtech_Backend/internal/platform/id"
-	platformlivekit "github.com/Faysal9991/edtech_Backend/internal/platform/livekit"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	api "github.com/neoscoder/lms-service/internal/api"
+	"github.com/neoscoder/lms-service/internal/data"
+	"github.com/neoscoder/lms-service/internal/platform/clock"
+	"github.com/neoscoder/lms-service/internal/platform/config"
+	"github.com/neoscoder/lms-service/internal/platform/database"
+	platformid "github.com/neoscoder/lms-service/internal/platform/id"
+	platformlivekit "github.com/neoscoder/lms-service/internal/platform/livekit"
 )
 
 var (

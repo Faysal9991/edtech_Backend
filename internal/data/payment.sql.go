@@ -334,6 +334,85 @@ func (q *Queries) GetSuccessfulPaymentForOrder(ctx context.Context, orderID uuid
 	return i, err
 }
 
+const listAdminPaymentOrders = `-- name: ListAdminPaymentOrders :many
+SELECT o.id, o.organization_id, o.user_id, o.status, o.amount_minor, o.currency, o.idempotency_key, o.provider_payment_intent_id, o.created_at, o.updated_at, o.paid_at, u.email, u.display_name
+FROM orders o JOIN users u ON u.id=o.user_id
+WHERE o.organization_id=$1
+  AND ($2::text IS NULL OR o.status=$2)
+  AND ($3::timestamptz IS NULL OR o.created_at>=$3)
+  AND ($4::timestamptz IS NULL OR o.created_at<$4)
+  AND ($5::timestamptz IS NULL OR (o.created_at,o.id)<($5,$6::uuid))
+ORDER BY o.created_at DESC,o.id DESC LIMIT $7
+`
+
+type ListAdminPaymentOrdersParams struct {
+	OrganizationID  uuid.UUID          `json:"organization_id"`
+	Status          pgtype.Text        `json:"status"`
+	FromTime        pgtype.Timestamptz `json:"from_time"`
+	ToTime          pgtype.Timestamptz `json:"to_time"`
+	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
+	CursorID        uuid.NullUUID      `json:"cursor_id"`
+	PageSize        int32              `json:"page_size"`
+}
+
+type ListAdminPaymentOrdersRow struct {
+	ID                      uuid.UUID          `json:"id"`
+	OrganizationID          uuid.UUID          `json:"organization_id"`
+	UserID                  uuid.UUID          `json:"user_id"`
+	Status                  string             `json:"status"`
+	AmountMinor             int64              `json:"amount_minor"`
+	Currency                string             `json:"currency"`
+	IdempotencyKey          string             `json:"idempotency_key"`
+	ProviderPaymentIntentID pgtype.Text        `json:"provider_payment_intent_id"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
+	PaidAt                  pgtype.Timestamptz `json:"paid_at"`
+	Email                   string             `json:"email"`
+	DisplayName             string             `json:"display_name"`
+}
+
+func (q *Queries) ListAdminPaymentOrders(ctx context.Context, arg ListAdminPaymentOrdersParams) ([]ListAdminPaymentOrdersRow, error) {
+	rows, err := q.db.Query(ctx, listAdminPaymentOrders,
+		arg.OrganizationID,
+		arg.Status,
+		arg.FromTime,
+		arg.ToTime,
+		arg.CursorCreatedAt,
+		arg.CursorID,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAdminPaymentOrdersRow{}
+	for rows.Next() {
+		var i ListAdminPaymentOrdersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.UserID,
+			&i.Status,
+			&i.AmountMinor,
+			&i.Currency,
+			&i.IdempotencyKey,
+			&i.ProviderPaymentIntentID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.PaidAt,
+			&i.Email,
+			&i.DisplayName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUserOrders = `-- name: ListUserOrders :many
 SELECT id, organization_id, user_id, status, amount_minor, currency, idempotency_key, provider_payment_intent_id, created_at, updated_at, paid_at FROM orders WHERE user_id=$1
  AND ($2::timestamptz IS NULL OR (created_at,id)<($2,$3::uuid))

@@ -3,7 +3,7 @@ package assignment
 import (
 	"testing"
 
-	api "github.com/Faysal9991/edtech_Backend/internal/api"
+	api "github.com/neoscoder/lms-service/internal/api"
 )
 
 func TestValidateScore(t *testing.T) {

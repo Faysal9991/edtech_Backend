@@ -8,13 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	stripe "github.com/stripe/stripe-go/v82"
 )
 
 var ErrInvalidSignature = errors.New("invalid webhook signature")
@@ -49,74 +48,40 @@ type Provider interface {
 }
 
 type Stripe struct {
-	secretKey, webhookSecret string
-	client                   *http.Client
-	baseURL                  string
+	webhookSecret string
+	client        *stripe.Client
 }
 
 func NewStripe(secretKey, webhookSecret string) *Stripe {
-	return &Stripe{secretKey: secretKey, webhookSecret: webhookSecret, client: &http.Client{Timeout: 15 * time.Second}, baseURL: "https://api.stripe.com/v1"}
+	return &Stripe{webhookSecret: webhookSecret, client: stripe.NewClient(secretKey)}
 }
 
 func (s *Stripe) CreateIntent(ctx context.Context, in IntentInput) (Intent, error) {
-	form := url.Values{}
-	form.Set("amount", strconv.FormatInt(in.AmountMinor, 10))
-	form.Set("currency", strings.ToLower(in.Currency))
-	form.Set("automatic_payment_methods[enabled]", "true")
-	form.Set("metadata[order_id]", in.OrderID)
+	params := &stripe.PaymentIntentCreateParams{
+		Amount: stripe.Int64(in.AmountMinor), Currency: stripe.String(strings.ToLower(in.Currency)),
+		AutomaticPaymentMethods: &stripe.PaymentIntentCreateAutomaticPaymentMethodsParams{Enabled: stripe.Bool(true)},
+		Metadata:                map[string]string{"order_id": in.OrderID},
+	}
 	if in.CustomerEmail != "" {
-		form.Set("receipt_email", in.CustomerEmail)
+		params.ReceiptEmail = stripe.String(in.CustomerEmail)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.baseURL+"/payment_intents", strings.NewReader(form.Encode()))
+	params.SetIdempotencyKey(in.IdempotencyKey)
+	result, err := s.client.V1PaymentIntents.Create(ctx, params)
 	if err != nil {
-		return Intent{}, err
+		return Intent{}, fmt.Errorf("create Stripe payment intent: %w", err)
 	}
-	req.SetBasicAuth(s.secretKey, "")
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Idempotency-Key", in.IdempotencyKey)
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return Intent{}, fmt.Errorf("Stripe payment intent: %w", err)
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return Intent{}, err
-	}
-	if resp.StatusCode/100 != 2 {
-		return Intent{}, fmt.Errorf("Stripe payment intent returned status %d", resp.StatusCode)
-	}
-	var out struct {
-		ID           string `json:"id"`
-		ClientSecret string `json:"client_secret"`
-		Status       string `json:"status"`
-	}
-	if err := json.Unmarshal(body, &out); err != nil {
-		return Intent{}, fmt.Errorf("decode Stripe response: %w", err)
-	}
-	if out.ID == "" || out.ClientSecret == "" {
+	if result == nil || result.ID == "" || result.ClientSecret == "" {
 		return Intent{}, errors.New("Stripe response missing payment intent data")
 	}
-	return Intent{ID: out.ID, ClientSecret: out.ClientSecret, Status: out.Status}, nil
+	return Intent{ID: result.ID, ClientSecret: result.ClientSecret, Status: string(result.Status)}, nil
 }
 func (s *Stripe) CancelIntent(ctx context.Context, id string) error {
 	if id == "" {
 		return nil
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.baseURL+"/payment_intents/"+url.PathEscape(id)+"/cancel", strings.NewReader(""))
-	if err != nil {
-		return err
-	}
-	req.SetBasicAuth(s.secretKey, "")
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := s.client.Do(req)
+	_, err := s.client.V1PaymentIntents.Cancel(ctx, id, &stripe.PaymentIntentCancelParams{})
 	if err != nil {
 		return fmt.Errorf("cancel Stripe payment intent: %w", err)
-	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("Stripe cancellation returned status %d", resp.StatusCode)
 	}
 	return nil
 }

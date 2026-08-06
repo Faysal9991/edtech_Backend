@@ -14,14 +14,14 @@ import (
 	"strings"
 	"time"
 
-	api "github.com/Faysal9991/edtech_Backend/internal/api"
-	"github.com/Faysal9991/edtech_Backend/internal/data"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/clock"
-	platformid "github.com/Faysal9991/edtech_Backend/internal/platform/id"
-	platformnotification "github.com/Faysal9991/edtech_Backend/internal/platform/notification"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/observability"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	api "github.com/neoscoder/lms-service/internal/api"
+	"github.com/neoscoder/lms-service/internal/data"
+	"github.com/neoscoder/lms-service/internal/platform/clock"
+	platformid "github.com/neoscoder/lms-service/internal/platform/id"
+	platformnotification "github.com/neoscoder/lms-service/internal/platform/notification"
+	"github.com/neoscoder/lms-service/internal/platform/observability"
 )
 
 type Cryptor struct{ aead cipher.AEAD }
@@ -102,14 +102,24 @@ func (s *Service) DispatchBatch(ctx context.Context, limit int32) error {
 	var first error
 	for _, event := range events {
 		if err := s.dispatch(ctx, event); err != nil {
-			delay := time.Duration(1<<min(event.Attempts, 10)) * time.Second
 			message := truncate(err.Error(), 500)
-			_, _ = s.q.SetOutboxFailed(ctx, data.SetOutboxFailedParams{ID: event.ID, NextAttemptAt: pgtype.Timestamptz{Time: s.clock.Now().Add(delay), Valid: true}, LastError: pgtype.Text{String: message, Valid: true}})
+			var stateErr error
+			if event.Attempts >= 12 {
+				_, stateErr = s.q.SetOutboxDeadLetter(ctx, data.SetOutboxDeadLetterParams{ID: event.ID, LastError: pgtype.Text{String: message, Valid: true}})
+			} else {
+				delay := time.Duration(1<<min(event.Attempts, 10)) * time.Second
+				_, stateErr = s.q.SetOutboxFailed(ctx, data.SetOutboxFailedParams{ID: event.ID, NextAttemptAt: pgtype.Timestamptz{Time: s.clock.Now().Add(delay), Valid: true}, LastError: pgtype.Text{String: message, Valid: true}})
+			}
 			if first == nil {
 				first = err
 			}
+			if stateErr != nil && first == nil {
+				first = stateErr
+			}
 		} else {
-			_, _ = s.q.SetOutboxPublished(ctx, event.ID)
+			if _, stateErr := s.q.SetOutboxPublished(ctx, event.ID); stateErr != nil && first == nil {
+				first = stateErr
+			}
 		}
 	}
 	return first
@@ -161,10 +171,16 @@ func (s *Service) dispatch(ctx context.Context, event data.OutboxEvent) error {
 	if err != nil {
 		return err
 	}
+	var firstDeliveryError error
 	for _, device := range tokens {
 		delivery, err := s.q.CreateNotificationDelivery(ctx, data.CreateNotificationDeliveryParams{ID: s.ids.New(), NotificationID: notification.ID, DeviceTokenID: uuid.NullUUID{UUID: device.ID, Valid: true}})
 		if err != nil {
 			return err
+		}
+		// A retry after the provider succeeded but before the outbox row was
+		// acknowledged must not send the same push notification twice.
+		if delivery.Status == "sent" {
+			continue
 		}
 		token, err := s.cryptor.Decrypt(device.EncryptedToken)
 		if err != nil {
@@ -174,15 +190,24 @@ func (s *Service) dispatch(ctx context.Context, event data.OutboxEvent) error {
 		if sendErr != nil {
 			observability.NotificationFailures.Inc()
 			message := truncate(sendErr.Error(), 500)
-			_, _ = s.q.SetNotificationDeliveryResult(ctx, data.SetNotificationDeliveryResultParams{ID: delivery.ID, Status: "failed", NextAttemptAt: pgtype.Timestamptz{Time: s.clock.Now().Add(time.Minute), Valid: true}, ProviderMessageID: pgtype.Text{}, LastError: pgtype.Text{String: message, Valid: true}})
+			if _, updateErr := s.q.SetNotificationDeliveryResult(ctx, data.SetNotificationDeliveryResultParams{ID: delivery.ID, Status: "failed", NextAttemptAt: pgtype.Timestamptz{Time: s.clock.Now().Add(time.Minute), Valid: true}, ProviderMessageID: pgtype.Text{}, LastError: pgtype.Text{String: message, Valid: true}}); updateErr != nil && firstDeliveryError == nil {
+				firstDeliveryError = updateErr
+			}
 			if strings.Contains(strings.ToLower(message), "registration-token-not-registered") || strings.Contains(strings.ToLower(message), "invalid registration") {
-				_, _ = s.q.DeleteDeviceTokenByID(ctx, device.ID)
+				if _, deleteErr := s.q.DeleteDeviceTokenByID(ctx, device.ID); deleteErr != nil && firstDeliveryError == nil {
+					firstDeliveryError = deleteErr
+				}
+			}
+			if firstDeliveryError == nil {
+				firstDeliveryError = sendErr
 			}
 			continue
 		}
-		_, _ = s.q.SetNotificationDeliveryResult(ctx, data.SetNotificationDeliveryResultParams{ID: delivery.ID, Status: "sent", NextAttemptAt: pgtype.Timestamptz{}, ProviderMessageID: pgtype.Text{String: providerID, Valid: true}, LastError: pgtype.Text{}})
+		if _, updateErr := s.q.SetNotificationDeliveryResult(ctx, data.SetNotificationDeliveryResultParams{ID: delivery.ID, Status: "sent", NextAttemptAt: pgtype.Timestamptz{}, ProviderMessageID: pgtype.Text{String: providerID, Valid: true}, LastError: pgtype.Text{}}); updateErr != nil && firstDeliveryError == nil {
+			firstDeliveryError = updateErr
+		}
 	}
-	return nil
+	return firstDeliveryError
 }
 
 func notificationCopy(kind string) (string, string) {

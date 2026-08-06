@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	provider "github.com/Faysal9991/edtech_Backend/internal/platform/payment"
+	provider "github.com/neoscoder/lms-service/internal/platform/payment"
 )
 
 func TestSignedWebhook(t *testing.T) {
@@ -16,7 +16,7 @@ func TestSignedWebhook(t *testing.T) {
 	body := []byte(`{"id":"evt_1","type":"payment_intent.succeeded","data":{"object":{"id":"pi_1","amount_received":1000,"currency":"bdt","metadata":{"order_id":"x"}}}}`)
 	now := time.Unix(1700000000, 0)
 	mac := hmac.New(sha256.New, []byte(secret))
-	_, _ = mac.Write([]byte(fmt.Sprintf("%d.", now.Unix())))
+	_, _ = fmt.Fprintf(mac, "%d.", now.Unix())
 	_, _ = mac.Write(body)
 	signature := fmt.Sprintf("t=%d,v1=%s", now.Unix(), hex.EncodeToString(mac.Sum(nil)))
 	event, err := provider.NewFakeProvider(secret).ParseWebhook(body, signature, now)

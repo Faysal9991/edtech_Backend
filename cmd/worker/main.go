@@ -11,21 +11,21 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Faysal9991/edtech_Backend/internal/data"
-	certificatemodule "github.com/Faysal9991/edtech_Backend/internal/modules/certificate"
-	mediamodule "github.com/Faysal9991/edtech_Backend/internal/modules/media"
-	notificationmodule "github.com/Faysal9991/edtech_Backend/internal/modules/notification"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/cache"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/clock"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/config"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/database"
-	platformid "github.com/Faysal9991/edtech_Backend/internal/platform/id"
-	platformnotification "github.com/Faysal9991/edtech_Backend/internal/platform/notification"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/observability"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/queue"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/storage"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
+	"github.com/neoscoder/lms-service/internal/data"
+	certificatemodule "github.com/neoscoder/lms-service/internal/modules/certificate"
+	mediamodule "github.com/neoscoder/lms-service/internal/modules/media"
+	notificationmodule "github.com/neoscoder/lms-service/internal/modules/notification"
+	"github.com/neoscoder/lms-service/internal/platform/cache"
+	"github.com/neoscoder/lms-service/internal/platform/clock"
+	"github.com/neoscoder/lms-service/internal/platform/config"
+	"github.com/neoscoder/lms-service/internal/platform/database"
+	platformid "github.com/neoscoder/lms-service/internal/platform/id"
+	platformnotification "github.com/neoscoder/lms-service/internal/platform/notification"
+	"github.com/neoscoder/lms-service/internal/platform/observability"
+	"github.com/neoscoder/lms-service/internal/platform/queue"
+	"github.com/neoscoder/lms-service/internal/platform/storage"
 )
 
 func main() {
@@ -39,7 +39,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	logger := observability.Logger(cfg.App.Environment)
+	logger := observability.Logger(cfg.App.Environment, cfg.Observability.LogLevel)
 	slog.SetDefault(logger)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -57,7 +57,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer redisClient.Close()
+	defer func() { _ = redisClient.Close() }()
 	queries := data.New(pool)
 	ids := platformid.Secure{}
 	realClock := clock.Real{}
@@ -66,9 +66,9 @@ func run() error {
 		return err
 	}
 	jobs := queue.NewClient(cfg.Redis)
-	defer jobs.Close()
+	defer func() { _ = jobs.Close() }()
 	var sender platformnotification.Sender
-	if cfg.App.Environment == "production" {
+	if cfg.Notification.Provider == "fcm" {
 		sender, err = platformnotification.NewFCM(ctx, cfg.Firebase.ProjectID)
 		if err != nil {
 			return err
@@ -118,7 +118,7 @@ func run() error {
 		return certificateService.Generate(ctx, id)
 	})
 	mux.HandleFunc(queue.TypeOutboxDispatch, func(ctx context.Context, _ *asynq.Task) error { return notificationService.DispatchBatch(ctx, 50) })
-	server := asynq.NewServer(asynq.RedisClientOpt{Addr: cfg.Redis.Addr, Password: cfg.Redis.Password, DB: cfg.Redis.DB}, asynq.Config{Concurrency: 10, Queues: map[string]int{"critical": 6, "default": 3, "low": 1}, ShutdownTimeout: cfg.HTTP.ShutdownTimeout, ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
+	server := asynq.NewServer(queue.RedisClientOpt(cfg.Redis), asynq.Config{Concurrency: cfg.Worker.Concurrency, Queues: map[string]int{"critical": 6, "default": 3, "low": 1}, ShutdownTimeout: cfg.HTTP.ShutdownTimeout, ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
 		logger.ErrorContext(ctx, "job failed", "type", task.Type(), "error", err)
 	})})
 	outboxDone := make(chan struct{})

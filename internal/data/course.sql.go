@@ -114,7 +114,7 @@ func (q *Queries) CreateCategory(ctx context.Context, arg CreateCategoryParams) 
 
 const createCourse = `-- name: CreateCourse :one
 INSERT INTO courses (id, organization_id, category_id, thumbnail_asset_id, title, slug, description, language, level, is_free, price_minor, currency, created_by)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id, organization_id, category_id, thumbnail_asset_id, title, slug, description, language, level, status, is_free, price_minor, currency, completion_video_threshold, version, published_at, created_by, created_at, updated_at, search_vector
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id, organization_id, category_id, thumbnail_asset_id, title, slug, description, language, level, status, is_free, price_minor, currency, completion_video_threshold, version, published_at, created_by, created_at, updated_at, search_vector, passing_percentage
 `
 
 type CreateCourseParams struct {
@@ -171,6 +171,7 @@ func (q *Queries) CreateCourse(ctx context.Context, arg CreateCourseParams) (Cou
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.SearchVector,
+		&i.PassingPercentage,
 	)
 	return i, err
 }
@@ -306,7 +307,7 @@ func (q *Queries) DeleteModule(ctx context.Context, id uuid.UUID) (int64, error)
 }
 
 const getCourse = `-- name: GetCourse :one
-SELECT id, organization_id, category_id, thumbnail_asset_id, title, slug, description, language, level, status, is_free, price_minor, currency, completion_video_threshold, version, published_at, created_by, created_at, updated_at, search_vector FROM courses WHERE id=$1
+SELECT id, organization_id, category_id, thumbnail_asset_id, title, slug, description, language, level, status, is_free, price_minor, currency, completion_video_threshold, version, published_at, created_by, created_at, updated_at, search_vector, passing_percentage FROM courses WHERE id=$1
 `
 
 func (q *Queries) GetCourse(ctx context.Context, id uuid.UUID) (Course, error) {
@@ -333,12 +334,13 @@ func (q *Queries) GetCourse(ctx context.Context, id uuid.UUID) (Course, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.SearchVector,
+		&i.PassingPercentage,
 	)
 	return i, err
 }
 
 const getCourseByLesson = `-- name: GetCourseByLesson :one
-SELECT c.id, c.organization_id, c.category_id, c.thumbnail_asset_id, c.title, c.slug, c.description, c.language, c.level, c.status, c.is_free, c.price_minor, c.currency, c.completion_video_threshold, c.version, c.published_at, c.created_by, c.created_at, c.updated_at, c.search_vector FROM courses c JOIN course_modules m ON m.course_id=c.id JOIN lessons l ON l.module_id=m.id WHERE l.id=$1
+SELECT c.id, c.organization_id, c.category_id, c.thumbnail_asset_id, c.title, c.slug, c.description, c.language, c.level, c.status, c.is_free, c.price_minor, c.currency, c.completion_video_threshold, c.version, c.published_at, c.created_by, c.created_at, c.updated_at, c.search_vector, c.passing_percentage FROM courses c JOIN course_modules m ON m.course_id=c.id JOIN lessons l ON l.module_id=m.id WHERE l.id=$1
 `
 
 func (q *Queries) GetCourseByLesson(ctx context.Context, id uuid.UUID) (Course, error) {
@@ -365,12 +367,13 @@ func (q *Queries) GetCourseByLesson(ctx context.Context, id uuid.UUID) (Course, 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.SearchVector,
+		&i.PassingPercentage,
 	)
 	return i, err
 }
 
 const getCourseByModule = `-- name: GetCourseByModule :one
-SELECT c.id, c.organization_id, c.category_id, c.thumbnail_asset_id, c.title, c.slug, c.description, c.language, c.level, c.status, c.is_free, c.price_minor, c.currency, c.completion_video_threshold, c.version, c.published_at, c.created_by, c.created_at, c.updated_at, c.search_vector FROM courses c JOIN course_modules m ON m.course_id=c.id WHERE m.id=$1
+SELECT c.id, c.organization_id, c.category_id, c.thumbnail_asset_id, c.title, c.slug, c.description, c.language, c.level, c.status, c.is_free, c.price_minor, c.currency, c.completion_video_threshold, c.version, c.published_at, c.created_by, c.created_at, c.updated_at, c.search_vector, c.passing_percentage FROM courses c JOIN course_modules m ON m.course_id=c.id WHERE m.id=$1
 `
 
 func (q *Queries) GetCourseByModule(ctx context.Context, id uuid.UUID) (Course, error) {
@@ -397,12 +400,13 @@ func (q *Queries) GetCourseByModule(ctx context.Context, id uuid.UUID) (Course, 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.SearchVector,
+		&i.PassingPercentage,
 	)
 	return i, err
 }
 
 const getCourseForUpdate = `-- name: GetCourseForUpdate :one
-SELECT id, organization_id, category_id, thumbnail_asset_id, title, slug, description, language, level, status, is_free, price_minor, currency, completion_video_threshold, version, published_at, created_by, created_at, updated_at, search_vector FROM courses WHERE id=$1 FOR UPDATE
+SELECT id, organization_id, category_id, thumbnail_asset_id, title, slug, description, language, level, status, is_free, price_minor, currency, completion_video_threshold, version, published_at, created_by, created_at, updated_at, search_vector, passing_percentage FROM courses WHERE id=$1 FOR UPDATE
 `
 
 func (q *Queries) GetCourseForUpdate(ctx context.Context, id uuid.UUID) (Course, error) {
@@ -429,6 +433,7 @@ func (q *Queries) GetCourseForUpdate(ctx context.Context, id uuid.UUID) (Course,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.SearchVector,
+		&i.PassingPercentage,
 	)
 	return i, err
 }
@@ -456,6 +461,39 @@ func (q *Queries) GetLesson(ctx context.Context, id uuid.UUID) (Lesson, error) {
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getPublishedCourseBySlug = `-- name: GetPublishedCourseBySlug :one
+SELECT id, organization_id, category_id, thumbnail_asset_id, title, slug, description, language, level, status, is_free, price_minor, currency, completion_video_threshold, version, published_at, created_by, created_at, updated_at, search_vector, passing_percentage FROM courses WHERE slug = $1 AND status = 'published'
+`
+
+func (q *Queries) GetPublishedCourseBySlug(ctx context.Context, slug string) (Course, error) {
+	row := q.db.QueryRow(ctx, getPublishedCourseBySlug, slug)
+	var i Course
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.CategoryID,
+		&i.ThumbnailAssetID,
+		&i.Title,
+		&i.Slug,
+		&i.Description,
+		&i.Language,
+		&i.Level,
+		&i.Status,
+		&i.IsFree,
+		&i.PriceMinor,
+		&i.Currency,
+		&i.CompletionVideoThreshold,
+		&i.Version,
+		&i.PublishedAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SearchVector,
+		&i.PassingPercentage,
 	)
 	return i, err
 }
@@ -584,7 +622,7 @@ func (q *Queries) ListCourseContent(ctx context.Context, courseID uuid.UUID) ([]
 }
 
 const listManagedCourses = `-- name: ListManagedCourses :many
-SELECT DISTINCT c.id, c.organization_id, c.category_id, c.thumbnail_asset_id, c.title, c.slug, c.description, c.language, c.level, c.status, c.is_free, c.price_minor, c.currency, c.completion_video_threshold, c.version, c.published_at, c.created_by, c.created_at, c.updated_at, c.search_vector FROM courses c
+SELECT DISTINCT c.id, c.organization_id, c.category_id, c.thumbnail_asset_id, c.title, c.slug, c.description, c.language, c.level, c.status, c.is_free, c.price_minor, c.currency, c.completion_video_threshold, c.version, c.published_at, c.created_by, c.created_at, c.updated_at, c.search_vector, c.passing_percentage FROM courses c
 LEFT JOIN course_instructors ci ON ci.course_id=c.id
 WHERE c.organization_id=$1
   AND ($2::uuid IS NULL OR ci.instructor_id=$2)
@@ -636,6 +674,7 @@ func (q *Queries) ListManagedCourses(ctx context.Context, arg ListManagedCourses
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.SearchVector,
+			&i.PassingPercentage,
 		); err != nil {
 			return nil, err
 		}
@@ -648,7 +687,7 @@ func (q *Queries) ListManagedCourses(ctx context.Context, arg ListManagedCourses
 }
 
 const listPublishedCourses = `-- name: ListPublishedCourses :many
-SELECT c.id, c.organization_id, c.category_id, c.thumbnail_asset_id, c.title, c.slug, c.description, c.language, c.level, c.status, c.is_free, c.price_minor, c.currency, c.completion_video_threshold, c.version, c.published_at, c.created_by, c.created_at, c.updated_at, c.search_vector, cc.name AS category_name
+SELECT c.id, c.organization_id, c.category_id, c.thumbnail_asset_id, c.title, c.slug, c.description, c.language, c.level, c.status, c.is_free, c.price_minor, c.currency, c.completion_video_threshold, c.version, c.published_at, c.created_by, c.created_at, c.updated_at, c.search_vector, c.passing_percentage, cc.name AS category_name
 FROM courses c LEFT JOIN course_categories cc ON cc.id=c.category_id
 WHERE c.status='published'
   AND ($1::uuid IS NULL OR c.organization_id=$1)
@@ -690,6 +729,7 @@ type ListPublishedCoursesRow struct {
 	CreatedAt                pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
 	SearchVector             interface{}        `json:"search_vector"`
+	PassingPercentage        pgtype.Numeric     `json:"passing_percentage"`
 	CategoryName             pgtype.Text        `json:"category_name"`
 }
 
@@ -731,6 +771,7 @@ func (q *Queries) ListPublishedCourses(ctx context.Context, arg ListPublishedCou
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.SearchVector,
+			&i.PassingPercentage,
 			&i.CategoryName,
 		); err != nil {
 			return nil, err
@@ -761,7 +802,7 @@ func (q *Queries) RemoveCourseInstructor(ctx context.Context, arg RemoveCourseIn
 }
 
 const setCourseStatus = `-- name: SetCourseStatus :one
-UPDATE courses SET status=$2,published_at=CASE WHEN $2='published' THEN COALESCE(published_at,now()) ELSE published_at END,version=version+1,updated_at=now() WHERE id=$1 RETURNING id, organization_id, category_id, thumbnail_asset_id, title, slug, description, language, level, status, is_free, price_minor, currency, completion_video_threshold, version, published_at, created_by, created_at, updated_at, search_vector
+UPDATE courses SET status=$2,published_at=CASE WHEN $2='published' THEN COALESCE(published_at,now()) ELSE published_at END,version=version+1,updated_at=now() WHERE id=$1 RETURNING id, organization_id, category_id, thumbnail_asset_id, title, slug, description, language, level, status, is_free, price_minor, currency, completion_video_threshold, version, published_at, created_by, created_at, updated_at, search_vector, passing_percentage
 `
 
 type SetCourseStatusParams struct {
@@ -793,6 +834,7 @@ func (q *Queries) SetCourseStatus(ctx context.Context, arg SetCourseStatusParams
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.SearchVector,
+		&i.PassingPercentage,
 	)
 	return i, err
 }
@@ -835,7 +877,7 @@ const updateCourse = `-- name: UpdateCourse :one
 UPDATE courses SET category_id=$1, thumbnail_asset_id=$2, title=$3, slug=$4, description=$5,
  language=$6, level=$7, is_free=$8, price_minor=$9, currency=$10,
  version=version+1, updated_at=now()
-WHERE id=$11 AND organization_id=$12 AND version=$13 RETURNING id, organization_id, category_id, thumbnail_asset_id, title, slug, description, language, level, status, is_free, price_minor, currency, completion_video_threshold, version, published_at, created_by, created_at, updated_at, search_vector
+WHERE id=$11 AND organization_id=$12 AND version=$13 RETURNING id, organization_id, category_id, thumbnail_asset_id, title, slug, description, language, level, status, is_free, price_minor, currency, completion_video_threshold, version, published_at, created_by, created_at, updated_at, search_vector, passing_percentage
 `
 
 type UpdateCourseParams struct {
@@ -892,6 +934,7 @@ func (q *Queries) UpdateCourse(ctx context.Context, arg UpdateCourseParams) (Cou
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.SearchVector,
+		&i.PassingPercentage,
 	)
 	return i, err
 }

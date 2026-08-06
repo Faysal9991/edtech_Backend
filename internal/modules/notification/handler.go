@@ -1,15 +1,17 @@
 package notification
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 
-	api "github.com/Faysal9991/edtech_Backend/internal/api"
-	"github.com/Faysal9991/edtech_Backend/internal/data"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/auth"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/httpx"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	api "github.com/neoscoder/lms-service/internal/api"
+	"github.com/neoscoder/lms-service/internal/data"
+	"github.com/neoscoder/lms-service/internal/platform/auth"
+	"github.com/neoscoder/lms-service/internal/platform/httpx"
 )
 
 type Handler struct {
@@ -34,6 +36,16 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 }
 func (h *Handler) Remove(w http.ResponseWriter, r *http.Request) {
 	p, _ := auth.PrincipalFrom(r.Context())
+	if token := chi.URLParam(r, "token"); token != "" {
+		hash := sha256.Sum256([]byte(token))
+		affected, err := h.q.RemoveDeviceTokenByHash(r.Context(), data.RemoveDeviceTokenByHashParams{TokenHash: hex.EncodeToString(hash[:]), UserID: p.UserID})
+		if err != nil || affected == 0 {
+			httpx.Problem(w, r, 404, "Not Found", "device token not found")
+			return
+		}
+		w.WriteHeader(204)
+		return
+	}
 	id, err := httpx.UUIDParam(r.URL.Query().Get("id"))
 	if err != nil {
 		httpx.Problem(w, r, 400, "Invalid ID", "id query parameter must be a UUID")

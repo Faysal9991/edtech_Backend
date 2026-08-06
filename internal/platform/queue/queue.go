@@ -1,12 +1,13 @@
 package queue
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"time"
 
-	"github.com/Faysal9991/edtech_Backend/internal/platform/config"
 	"github.com/hibiken/asynq"
+	"github.com/neoscoder/lms-service/internal/platform/config"
 )
 
 const (
@@ -23,7 +24,15 @@ type Client interface {
 type AsynqClient struct{ client *asynq.Client }
 
 func NewClient(cfg config.Redis) *AsynqClient {
-	return &AsynqClient{client: asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.Addr, Password: cfg.Password, DB: cfg.DB})}
+	return &AsynqClient{client: asynq.NewClient(RedisClientOpt(cfg))}
+}
+
+func RedisClientOpt(cfg config.Redis) asynq.RedisClientOpt {
+	option := asynq.RedisClientOpt{Addr: cfg.Addr, Password: cfg.Password, DB: cfg.DB}
+	if cfg.TLS {
+		option.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+	return option
 }
 
 func (c *AsynqClient) Close() error { return c.client.Close() }

@@ -10,32 +10,33 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/Faysal9991/edtech_Backend/internal/data"
-	assignmentmodule "github.com/Faysal9991/edtech_Backend/internal/modules/assignment"
-	certificatemodule "github.com/Faysal9991/edtech_Backend/internal/modules/certificate"
-	coursemodule "github.com/Faysal9991/edtech_Backend/internal/modules/course"
-	enrollmentmodule "github.com/Faysal9991/edtech_Backend/internal/modules/enrollment"
-	liveclassmodule "github.com/Faysal9991/edtech_Backend/internal/modules/liveclass"
-	mediamodule "github.com/Faysal9991/edtech_Backend/internal/modules/media"
-	notificationmodule "github.com/Faysal9991/edtech_Backend/internal/modules/notification"
-	organizationmodule "github.com/Faysal9991/edtech_Backend/internal/modules/organization"
-	paymentmodule "github.com/Faysal9991/edtech_Backend/internal/modules/payment"
-	quizmodule "github.com/Faysal9991/edtech_Backend/internal/modules/quiz"
-	reportingmodule "github.com/Faysal9991/edtech_Backend/internal/modules/reporting"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/auth"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/cache"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/clock"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/config"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/database"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/httpserver"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/httpx"
-	platformid "github.com/Faysal9991/edtech_Backend/internal/platform/id"
-	platformlivekit "github.com/Faysal9991/edtech_Backend/internal/platform/livekit"
-	platformnotification "github.com/Faysal9991/edtech_Backend/internal/platform/notification"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/observability"
-	platformpayment "github.com/Faysal9991/edtech_Backend/internal/platform/payment"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/queue"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/storage"
+	"github.com/neoscoder/lms-service/internal/data"
+	assignmentmodule "github.com/neoscoder/lms-service/internal/modules/assignment"
+	certificatemodule "github.com/neoscoder/lms-service/internal/modules/certificate"
+	coursemodule "github.com/neoscoder/lms-service/internal/modules/course"
+	enrollmentmodule "github.com/neoscoder/lms-service/internal/modules/enrollment"
+	identitymodule "github.com/neoscoder/lms-service/internal/modules/identity"
+	liveclassmodule "github.com/neoscoder/lms-service/internal/modules/liveclass"
+	mediamodule "github.com/neoscoder/lms-service/internal/modules/media"
+	notificationmodule "github.com/neoscoder/lms-service/internal/modules/notification"
+	paymentmodule "github.com/neoscoder/lms-service/internal/modules/payment"
+	quizmodule "github.com/neoscoder/lms-service/internal/modules/quiz"
+	reportingmodule "github.com/neoscoder/lms-service/internal/modules/reporting"
+	usersmodule "github.com/neoscoder/lms-service/internal/modules/users"
+	"github.com/neoscoder/lms-service/internal/platform/auth"
+	"github.com/neoscoder/lms-service/internal/platform/cache"
+	"github.com/neoscoder/lms-service/internal/platform/clock"
+	"github.com/neoscoder/lms-service/internal/platform/config"
+	"github.com/neoscoder/lms-service/internal/platform/database"
+	"github.com/neoscoder/lms-service/internal/platform/httpserver"
+	"github.com/neoscoder/lms-service/internal/platform/httpx"
+	platformid "github.com/neoscoder/lms-service/internal/platform/id"
+	platformlivekit "github.com/neoscoder/lms-service/internal/platform/livekit"
+	platformnotification "github.com/neoscoder/lms-service/internal/platform/notification"
+	"github.com/neoscoder/lms-service/internal/platform/observability"
+	platformpayment "github.com/neoscoder/lms-service/internal/platform/payment"
+	"github.com/neoscoder/lms-service/internal/platform/queue"
+	"github.com/neoscoder/lms-service/internal/platform/storage"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -50,7 +51,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	logger := observability.Logger(cfg.App.Environment)
+	logger := observability.Logger(cfg.App.Environment, cfg.Observability.LogLevel)
 	slog.SetDefault(logger)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -68,35 +69,27 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer redisClient.Close()
+	defer func() { _ = redisClient.Close() }()
 	queries := data.New(pool)
 	ids := platformid.Secure{}
 	realClock := clock.Real{}
-	var verifier auth.TokenVerifier
-	if cfg.App.FakeAuthEnabled {
-		verifier = auth.DevelopmentVerifier{}
-		logger.Warn("development fake authentication enabled")
-	} else {
-		verifier, err = auth.NewFirebaseVerifier(ctx, cfg.Firebase.ProjectID)
-		if err != nil {
-			return err
-		}
-	}
+	jwtManager := auth.NewJWTManager(cfg.Auth)
+	passwordHasher := auth.NewPasswordHasher(cfg.Password)
 	objectStore, err := storage.NewMinIO(cfg.Storage)
 	if err != nil {
 		return err
 	}
 	jobs := queue.NewClient(cfg.Redis)
-	defer jobs.Close()
+	defer func() { _ = jobs.Close() }()
 	liveProvider := platformlivekit.New(cfg.LiveKit.APIKey, cfg.LiveKit.APISecret)
 	var paymentProvider platformpayment.Provider
-	if cfg.App.Environment == "production" {
+	if cfg.Payment.Provider == "stripe" {
 		paymentProvider = platformpayment.NewStripe(cfg.Stripe.SecretKey, cfg.Stripe.WebhookSecret)
 	} else {
 		paymentProvider = platformpayment.NewFakeProvider(cfg.Stripe.WebhookSecret)
 	}
 	var sender platformnotification.Sender
-	if cfg.App.Environment == "production" {
+	if cfg.Notification.Provider == "fcm" {
 		sender, err = platformnotification.NewFCM(ctx, cfg.Firebase.ProjectID)
 		if err != nil {
 			return err
@@ -108,7 +101,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	orgService := organizationmodule.NewService(pool, queries, ids, realClock)
+	identityService, err := identitymodule.NewService(pool, queries, ids, passwordHasher, jwtManager, cfg.Auth, cfg.App.DefaultOrganizationSlug)
+	if err != nil {
+		return fmt.Errorf("initialize identity service: %w", err)
+	}
+	usersService := usersmodule.NewService(pool, queries, ids, cfg.App.DefaultOrganizationSlug)
 	courseService := coursemodule.NewService(pool, queries, ids)
 	mediaService := mediamodule.NewService(pool, queries, ids, realClock, objectStore, jobs, cfg)
 	enrollmentService := enrollmentmodule.NewService(pool, queries, ids, realClock, jobs)
@@ -119,11 +116,11 @@ func run() error {
 	paymentService := paymentmodule.NewService(pool, queries, ids, realClock, paymentProvider)
 	notificationService := notificationmodule.NewService(queries, ids, realClock, sender, cryptor)
 	reportingService := reportingmodule.NewService(queries)
-	authMiddleware := auth.NewMiddleware(verifier, queries, ids, cache.NewRedisLimiter(redisClient), cfg.RateLimit.Requests, cfg.RateLimit.Window)
+	limiter := cache.NewRedisLimiter(redisClient)
 	httpxRegister()
 	closeMetrics := observability.RegisterOperationalMetrics(prometheus.DefaultRegisterer, pool, cfg.Redis)
-	defer closeMetrics()
-	handler := httpserver.NewRouter(httpserver.Dependencies{Config: cfg, Logger: logger, Auth: authMiddleware, DB: pool, Redis: redisClient, Handlers: httpserver.Handlers{Organization: organizationmodule.NewHandler(orgService, queries, verifier), Course: coursemodule.NewHandler(courseService, queries, ids), Media: mediamodule.NewHandler(mediaService, queries), Enrollment: enrollmentmodule.NewHandler(enrollmentService, queries), Quiz: quizmodule.NewHandler(quizService, queries), Assignment: assignmentmodule.NewHandler(assignmentService, queries), LiveClass: liveclassmodule.NewHandler(liveService, queries), Certificate: certificatemodule.NewHandler(certificateService, queries), Payment: paymentmodule.NewHandler(paymentService, queries), Notification: notificationmodule.NewHandler(notificationService, queries), Reporting: reportingmodule.NewHandler(reportingService, queries)}})
+	defer func() { _ = closeMetrics() }()
+	handler := httpserver.NewRouter(httpserver.Dependencies{Config: cfg, Logger: logger, JWT: jwtManager, Queries: queries, Limiter: limiter, DB: pool, Redis: redisClient, Handlers: httpserver.Handlers{Identity: identitymodule.NewHandler(identityService, cfg.App.Environment), Users: usersmodule.NewHandler(usersService), Course: coursemodule.NewHandler(courseService, queries, ids), Media: mediamodule.NewHandler(mediaService, queries), Enrollment: enrollmentmodule.NewHandler(enrollmentService, queries), Quiz: quizmodule.NewHandler(quizService, queries), Assignment: assignmentmodule.NewHandler(assignmentService, queries), LiveClass: liveclassmodule.NewHandler(liveService, queries), Certificate: certificatemodule.NewHandler(certificateService, queries), Payment: paymentmodule.NewHandler(paymentService, queries), Notification: notificationmodule.NewHandler(notificationService, queries), Reporting: reportingmodule.NewHandler(reportingService, queries)}})
 	server := &http.Server{Addr: fmt.Sprintf("%s:%d", cfg.HTTP.Host, cfg.HTTP.Port), Handler: handler, ReadTimeout: cfg.HTTP.ReadTimeout, ReadHeaderTimeout: cfg.HTTP.ReadTimeout, WriteTimeout: cfg.HTTP.WriteTimeout, IdleTimeout: cfg.HTTP.IdleTimeout}
 	errorsCh := make(chan error, 1)
 	go func() { logger.Info("API listening", "address", server.Addr); errorsCh <- server.ListenAndServe() }()

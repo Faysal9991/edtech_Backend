@@ -5,14 +5,14 @@ import (
 	"net/http"
 	"strings"
 
-	api "github.com/Faysal9991/edtech_Backend/internal/api"
-	"github.com/Faysal9991/edtech_Backend/internal/data"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/auth"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/httpx"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	api "github.com/neoscoder/lms-service/internal/api"
+	"github.com/neoscoder/lms-service/internal/data"
+	"github.com/neoscoder/lms-service/internal/platform/auth"
+	"github.com/neoscoder/lms-service/internal/platform/httpx"
 )
 
 type Handler struct {

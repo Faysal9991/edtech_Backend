@@ -4,7 +4,7 @@ Indexes follow concrete filters and sort orders. Cursor predicates use the same 
 
 | Endpoint/query | Filter and ordering | Supporting index |
 |---|---|---|
-| user bootstrap | `firebase_uid`, normalized email | `users_firebase_uid_key`, `users_email_normalized_uidx` |
+| user login and registration | case-insensitive `email`, account status | `users_email_normalized_uidx`, `users_status_created_idx` |
 | membership authorization | `user_id, status`; unique org/user | `organization_memberships_user_status_idx`, unique constraint |
 | organization member pages | `organization_id, created_at DESC, id` | `organization_memberships_org_cursor_idx` |
 | course categories | `organization_id, created_at DESC, id` | `course_categories_org_cursor_idx` |

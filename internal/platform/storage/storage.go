@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Faysal9991/edtech_Backend/internal/platform/config"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/neoscoder/lms-service/internal/platform/config"
 )
 
 type ObjectInfo struct {
@@ -28,15 +28,31 @@ type Store interface {
 }
 
 type MinIO struct {
-	client *minio.Client
-	bucket string
+	client  *minio.Client
+	presign *minio.Client
+	bucket  string
 }
 
 func NewMinIO(cfg config.Storage) (*MinIO, error) {
-	endpoint := strings.TrimSuffix(cfg.Endpoint, "/")
+	client, err := newClient(cfg.Endpoint, cfg)
+	if err != nil {
+		return nil, err
+	}
+	presign := client
+	if cfg.PublicEndpoint != "" && strings.TrimSuffix(cfg.PublicEndpoint, "/") != strings.TrimSuffix(cfg.Endpoint, "/") {
+		presign, err = newClient(cfg.PublicEndpoint, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("initialize public object-storage signer: %w", err)
+		}
+	}
+	return &MinIO{client: client, presign: presign, bucket: cfg.Bucket}, nil
+}
+
+func newClient(rawEndpoint string, cfg config.Storage) (*minio.Client, error) {
+	endpoint := strings.TrimSuffix(rawEndpoint, "/")
 	parsed, err := url.Parse(endpoint)
 	if err != nil {
-		return nil, fmt.Errorf("parse S3 endpoint: %w", err)
+		return nil, fmt.Errorf("parse object-storage endpoint: %w", err)
 	}
 	host := parsed.Host
 	secure := parsed.Scheme == "https"
@@ -47,17 +63,17 @@ func NewMinIO(cfg config.Storage) (*MinIO, error) {
 	if err != nil {
 		return nil, fmt.Errorf("initialize object storage: %w", err)
 	}
-	return &MinIO{client: client, bucket: cfg.Bucket}, nil
+	return client, nil
 }
 func (s *MinIO) PresignUpload(ctx context.Context, key, contentType string, ttl time.Duration) (string, error) {
-	u, err := s.client.PresignedPutObject(ctx, s.bucket, key, ttl)
+	u, err := s.presign.PresignedPutObject(ctx, s.bucket, key, ttl)
 	if err != nil {
 		return "", fmt.Errorf("presign upload: %w", err)
 	}
 	return u.String(), nil
 }
 func (s *MinIO) PresignDownload(ctx context.Context, key string, ttl time.Duration) (string, error) {
-	u, err := s.client.PresignedGetObject(ctx, s.bucket, key, ttl, nil)
+	u, err := s.presign.PresignedGetObject(ctx, s.bucket, key, ttl, nil)
 	if err != nil {
 		return "", fmt.Errorf("presign download: %w", err)
 	}

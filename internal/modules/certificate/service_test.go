@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	platformid "github.com/Faysal9991/edtech_Backend/internal/platform/id"
+	platformid "github.com/neoscoder/lms-service/internal/platform/id"
 )
 
 func TestRenderPDF(t *testing.T) {

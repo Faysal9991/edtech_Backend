@@ -13,15 +13,15 @@ import (
 	"strings"
 	"time"
 
-	api "github.com/Faysal9991/edtech_Backend/internal/api"
-	"github.com/Faysal9991/edtech_Backend/internal/data"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/clock"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/database"
-	platformid "github.com/Faysal9991/edtech_Backend/internal/platform/id"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/queue"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	api "github.com/neoscoder/lms-service/internal/api"
+	"github.com/neoscoder/lms-service/internal/data"
+	"github.com/neoscoder/lms-service/internal/platform/clock"
+	"github.com/neoscoder/lms-service/internal/platform/database"
+	platformid "github.com/neoscoder/lms-service/internal/platform/id"
+	"github.com/neoscoder/lms-service/internal/platform/queue"
 )
 
 var (
@@ -104,7 +104,7 @@ func nullableInt(v *int) pgtype.Int4 {
 	if v == nil {
 		return pgtype.Int4{}
 	}
-	return pgtype.Int4{Int32: int32(*v), Valid: true}
+	return pgtype.Int4{Int32: int32(*v), Valid: true} // #nosec G115 -- callers validate the quiz time limit
 }
 func nullableTime(v *time.Time) pgtype.Timestamptz {
 	if v == nil {
@@ -123,12 +123,15 @@ func (s *Service) Create(ctx context.Context, orgID uuid.UUID, in api.QuizWrite)
 	if err := validateQuizSettings(in); err != nil {
 		return data.Quiz{}, err
 	}
-	return s.q.CreateQuiz(ctx, data.CreateQuizParams{ID: s.ids.New(), OrganizationID: orgID, CourseID: in.CourseId, LessonID: nullableUUID(in.LessonId), Title: strings.TrimSpace(in.Title), Instructions: value(in.Instructions), TimeLimitSeconds: nullableInt(in.TimeLimitSeconds), AttemptLimit: int32(in.AttemptLimit), PassPercentage: numeric(float64(in.PassPercentage)), RandomizeQuestions: valueBool(in.RandomizeQuestions), RandomizeOptions: valueBool(in.RandomizeOptions), AvailableFrom: nullableTime(in.AvailableFrom), AvailableUntil: nullableTime(in.AvailableUntil), ResultsVisibility: visibilityValue(in.ResultsVisibility), IsRequired: valueBool(in.IsRequired)})
+	return s.q.CreateQuiz(ctx, data.CreateQuizParams{ID: s.ids.New(), OrganizationID: orgID, CourseID: in.CourseId, LessonID: nullableUUID(in.LessonId), Title: strings.TrimSpace(in.Title), Instructions: value(in.Instructions), TimeLimitSeconds: nullableInt(in.TimeLimitSeconds), AttemptLimit: int32(in.AttemptLimit), PassPercentage: numeric(float64(in.PassPercentage)), RandomizeQuestions: valueBool(in.RandomizeQuestions), RandomizeOptions: valueBool(in.RandomizeOptions), AvailableFrom: nullableTime(in.AvailableFrom), AvailableUntil: nullableTime(in.AvailableUntil), ResultsVisibility: visibilityValue(in.ResultsVisibility), IsRequired: valueBool(in.IsRequired)}) // #nosec G115 -- attempt limit validated to 1..100
 }
 
 func validateQuizSettings(in api.QuizWrite) error {
-	if strings.TrimSpace(in.Title) == "" || in.AttemptLimit < 1 || in.PassPercentage < 0 || in.PassPercentage > 100 {
+	if strings.TrimSpace(in.Title) == "" || in.AttemptLimit < 1 || in.AttemptLimit > 100 || in.PassPercentage < 0 || in.PassPercentage > 100 {
 		return errors.New("invalid quiz settings")
+	}
+	if in.TimeLimitSeconds != nil && (*in.TimeLimitSeconds < 1 || *in.TimeLimitSeconds > 24*60*60) {
+		return errors.New("quiz time limit must be between 1 second and 24 hours")
 	}
 	if in.AvailableFrom != nil && in.AvailableUntil != nil && !in.AvailableUntil.After(*in.AvailableFrom) {
 		return errors.New("available_until must be after available_from")
@@ -172,15 +175,15 @@ func (s *Service) AddQuestion(ctx context.Context, quizID uuid.UUID, in api.Ques
 		if quiz.Status != "draft" {
 			return errors.New("questions can only be changed while the quiz is draft")
 		}
-		question, err = q.CreateQuizQuestion(ctx, data.CreateQuizQuestionParams{ID: s.ids.New(), QuizID: quizID, QuestionType: kind, Prompt: strings.TrimSpace(in.Prompt), Points: numeric(float64(in.Points)), Position: int32(in.Position)})
+		question, err = q.CreateQuizQuestion(ctx, data.CreateQuizQuestionParams{ID: s.ids.New(), QuizID: quizID, QuestionType: kind, Prompt: strings.TrimSpace(in.Prompt), Points: numeric(float64(in.Points)), Position: int32(in.Position)}) // #nosec G115 -- question position is range checked
 		if err != nil {
 			return err
 		}
 		for _, option := range in.Options {
-			if strings.TrimSpace(option.Text) == "" || option.Position < 1 {
+			if strings.TrimSpace(option.Text) == "" || option.Position < 1 || option.Position > math.MaxInt32 {
 				return errors.New("invalid option")
 			}
-			if _, err = q.CreateQuizOption(ctx, data.CreateQuizOptionParams{ID: s.ids.New(), QuestionID: question.ID, Text: strings.TrimSpace(option.Text), IsCorrect: option.IsCorrect, Position: int32(option.Position)}); err != nil {
+			if _, err = q.CreateQuizOption(ctx, data.CreateQuizOptionParams{ID: s.ids.New(), QuestionID: question.ID, Text: strings.TrimSpace(option.Text), IsCorrect: option.IsCorrect, Position: int32(option.Position)}); err != nil { // #nosec G115 -- option position is range checked
 				return err
 			}
 		}
@@ -190,7 +193,7 @@ func (s *Service) AddQuestion(ctx context.Context, quizID uuid.UUID, in api.Ques
 }
 
 func validateQuestion(in api.QuestionWrite) (string, error) {
-	if strings.TrimSpace(in.Prompt) == "" || in.Points <= 0 || in.Position < 1 {
+	if strings.TrimSpace(in.Prompt) == "" || in.Points <= 0 || in.Position < 1 || in.Position > math.MaxInt32 {
 		return "", errors.New("invalid question")
 	}
 	kind := string(in.QuestionType)
@@ -208,7 +211,7 @@ func validateQuestion(in api.QuestionWrite) (string, error) {
 	}
 	correct := 0
 	for _, option := range in.Options {
-		if strings.TrimSpace(option.Text) == "" || option.Position < 1 {
+		if strings.TrimSpace(option.Text) == "" || option.Position < 1 || option.Position > math.MaxInt32 {
 			return "", errors.New("invalid option")
 		}
 		if option.IsCorrect {
@@ -243,7 +246,7 @@ func (s *Service) UpdateQuestion(ctx context.Context, questionID uuid.UUID, in a
 		if quiz.Status != "draft" {
 			return errors.New("questions can only be changed while the quiz is draft")
 		}
-		updated, err = q.UpdateQuizQuestion(ctx, data.UpdateQuizQuestionParams{ID: questionID, QuestionType: kind, Prompt: strings.TrimSpace(in.Prompt), Points: numeric(float64(in.Points)), Position: int32(in.Position)})
+		updated, err = q.UpdateQuizQuestion(ctx, data.UpdateQuizQuestionParams{ID: questionID, QuestionType: kind, Prompt: strings.TrimSpace(in.Prompt), Points: numeric(float64(in.Points)), Position: int32(in.Position)}) // #nosec G115 -- question position is range checked
 		if err != nil {
 			return err
 		}
@@ -251,7 +254,7 @@ func (s *Service) UpdateQuestion(ctx context.Context, questionID uuid.UUID, in a
 			return err
 		}
 		for _, option := range in.Options {
-			if _, err = q.CreateQuizOption(ctx, data.CreateQuizOptionParams{ID: s.ids.New(), QuestionID: questionID, Text: strings.TrimSpace(option.Text), IsCorrect: option.IsCorrect, Position: int32(option.Position)}); err != nil {
+			if _, err = q.CreateQuizOption(ctx, data.CreateQuizOptionParams{ID: s.ids.New(), QuestionID: questionID, Text: strings.TrimSpace(option.Text), IsCorrect: option.IsCorrect, Position: int32(option.Position)}); err != nil { // #nosec G115 -- option position is range checked
 				return err
 			}
 		}
@@ -312,6 +315,9 @@ func (s *Service) Start(ctx context.Context, quizID, studentID uuid.UUID) (Attem
 	var attempt data.QuizAttempt
 	err = database.WithinTx(ctx, s.db, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
+		if _, err := q.ExpireStudentQuizAttempts(ctx, data.ExpireStudentQuizAttemptsParams{QuizID: quizID, StudentID: studentID, ExpiredAt: pgtype.Timestamptz{Time: now, Valid: true}}); err != nil {
+			return err
+		}
 		number, err := q.NextQuizAttemptNumber(ctx, data.NextQuizAttemptNumberParams{QuizID: quizID, StudentID: studentID})
 		if err != nil {
 			return err
@@ -335,13 +341,13 @@ func (s *Service) Start(ctx context.Context, quizID, studentID uuid.UUID) (Attem
 	if err != nil {
 		return AttemptView{}, err
 	}
-	return view(attempt, snapshot, false), nil
+	return view(attempt, snapshot, false, false), nil
 }
 
 func shuffleSnapshot(snapshot *Snapshot, questions, options bool) {
 	var seed [16]byte
 	_, _ = rand.Read(seed[:])
-	rng := mathrand.New(mathrand.NewPCG(binary.LittleEndian.Uint64(seed[:8]), binary.LittleEndian.Uint64(seed[8:])))
+	rng := mathrand.New(mathrand.NewPCG(binary.LittleEndian.Uint64(seed[:8]), binary.LittleEndian.Uint64(seed[8:]))) // #nosec G404 -- crypto/rand-seeded PRNG is used only for question ordering
 	if questions {
 		rng.Shuffle(len(snapshot.Questions), func(i, j int) {
 			snapshot.Questions[i], snapshot.Questions[j] = snapshot.Questions[j], snapshot.Questions[i]
@@ -421,6 +427,14 @@ func (s *Service) Submit(ctx context.Context, attemptID, studentID uuid.UUID) (A
 		if err != nil {
 			return err
 		}
+		if locked.Status == "in_progress" && locked.ExpiresAt.Valid && !s.clock.Now().Before(locked.ExpiresAt.Time) {
+			attempt, err = q.ExpireQuizAttempt(ctx, locked.ID)
+			if err != nil {
+				return err
+			}
+			quiz, err = q.GetQuiz(ctx, locked.QuizID)
+			return err
+		}
 		if locked.Status != "in_progress" {
 			attempt = locked
 			quiz, err = q.GetQuiz(ctx, locked.QuizID)
@@ -493,7 +507,7 @@ func (s *Service) Submit(ctx context.Context, attemptID, studentID uuid.UUID) (A
 	if completedEnrollment != uuid.Nil {
 		_ = s.jobs.Enqueue(queue.TypeCompletionEvaluate, map[string]string{"enrollment_id": completedEnrollment.String()})
 	}
-	return view(attempt, snapshot, canReveal(quiz, s.clock.Now())), nil
+	return view(attempt, snapshot, false, canReveal(quiz, s.clock.Now())), nil
 }
 
 func (s *Service) GetAttempt(ctx context.Context, id, userID uuid.UUID, privileged bool) (AttemptView, error) {
@@ -511,15 +525,15 @@ func (s *Service) GetAttempt(ctx context.Context, id, userID uuid.UUID, privileg
 	if err != nil {
 		return AttemptView{}, err
 	}
-	reveal := privileged
+	revealResults := privileged
 	if !privileged && attempt.Status != "in_progress" {
 		quiz, err := s.q.GetQuiz(ctx, attempt.QuizID)
 		if err != nil {
 			return AttemptView{}, err
 		}
-		reveal = canReveal(quiz, s.clock.Now())
+		revealResults = canReveal(quiz, s.clock.Now())
 	}
-	return view(attempt, snapshot, reveal), nil
+	return view(attempt, snapshot, privileged, revealResults), nil
 }
 
 func canReveal(quiz data.Quiz, now time.Time) bool {
@@ -629,7 +643,7 @@ func (s *Service) ManualGrade(ctx context.Context, attemptID, questionID, grader
 	if completedEnrollment != uuid.Nil {
 		_ = s.jobs.Enqueue(queue.TypeCompletionEvaluate, map[string]string{"enrollment_id": completedEnrollment.String()})
 	}
-	return view(attempt, snapshot, true), nil
+	return view(attempt, snapshot, true, true), nil
 }
 
 func correctSelection(q SnapshotQuestion, selected []uuid.UUID) bool {
@@ -662,7 +676,7 @@ func decodeSnapshot(raw []byte) (Snapshot, error) {
 	}
 	return s, nil
 }
-func view(a data.QuizAttempt, s Snapshot, reveal bool) AttemptView {
+func view(a data.QuizAttempt, s Snapshot, revealAnswers, revealResults bool) AttemptView {
 	out := AttemptView{ID: a.ID, QuizID: a.QuizID, AttemptNumber: a.AttemptNumber, Status: a.Status, Questions: []PublicQuestion{}}
 	if a.StartedAt.Valid {
 		out.StartedAt = a.StartedAt.Time
@@ -675,7 +689,7 @@ func view(a data.QuizAttempt, s Snapshot, reveal bool) AttemptView {
 		pq := PublicQuestion{ID: q.ID, Type: q.Type, Prompt: q.Prompt, Points: q.Points, Options: []PublicOption{}}
 		for _, o := range q.Options {
 			po := PublicOption{ID: o.ID, Text: o.Text}
-			if reveal {
+			if revealAnswers {
 				v := o.Correct
 				po.Correct = &v
 			}
@@ -683,11 +697,11 @@ func view(a data.QuizAttempt, s Snapshot, reveal bool) AttemptView {
 		}
 		out.Questions = append(out.Questions, pq)
 	}
-	if reveal && a.Percentage.Valid {
+	if revealResults && a.Percentage.Valid {
 		v := floatNumeric(a.Percentage)
 		out.Percentage = &v
 	}
-	if reveal && a.Passed.Valid {
+	if revealResults && a.Passed.Valid {
 		v := a.Passed.Bool
 		out.Passed = &v
 	}

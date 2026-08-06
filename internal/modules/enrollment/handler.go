@@ -3,14 +3,15 @@ package enrollment
 import (
 	"errors"
 	"net/http"
+	"strings"
 
-	api "github.com/Faysal9991/edtech_Backend/internal/api"
-	"github.com/Faysal9991/edtech_Backend/internal/data"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/auth"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/httpx"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	api "github.com/neoscoder/lms-service/internal/api"
+	"github.com/neoscoder/lms-service/internal/data"
+	"github.com/neoscoder/lms-service/internal/platform/auth"
+	"github.com/neoscoder/lms-service/internal/platform/httpx"
 )
 
 type Handler struct {
@@ -107,6 +108,63 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	if len(rows) == int(size) {
 		last := rows[len(rows)-1]
 		response["next_cursor"] = httpx.EncodeCursor(last.UpdatedAt.Time, last.ID)
+	}
+	httpx.JSON(w, 200, response)
+}
+
+func (h *Handler) AdminList(w http.ResponseWriter, r *http.Request) {
+	m, ok := auth.MembershipFrom(r.Context())
+	if !ok {
+		httpx.Problem(w, r, 400, "Organization Required", "an organization membership is required")
+		return
+	}
+	size, err := httpx.PageSize(r)
+	if err != nil {
+		httpx.Problem(w, r, 400, "Invalid Pagination", err.Error())
+		return
+	}
+	cursor, err := httpx.ParseCursor(r.URL.Query().Get("cursor"))
+	if err != nil {
+		httpx.Problem(w, r, 400, "Invalid Pagination", err.Error())
+		return
+	}
+	params := data.ListAdminEnrollmentsParams{OrganizationID: m.OrganizationID, PageSize: size}
+	if status := strings.TrimSpace(r.URL.Query().Get("status")); status != "" {
+		params.Status = pgtype.Text{String: status, Valid: true}
+	}
+	if raw := r.URL.Query().Get("course_id"); raw != "" {
+		id, parseErr := uuid.Parse(raw)
+		if parseErr != nil {
+			httpx.Problem(w, r, 400, "Invalid Filter", "course_id must be a UUID")
+			return
+		}
+		params.CourseID = uuid.NullUUID{UUID: id, Valid: true}
+	}
+	if raw := r.URL.Query().Get("student_id"); raw != "" {
+		id, parseErr := uuid.Parse(raw)
+		if parseErr != nil {
+			httpx.Problem(w, r, 400, "Invalid Filter", "student_id must be a UUID")
+			return
+		}
+		params.StudentID = uuid.NullUUID{UUID: id, Valid: true}
+	}
+	if cursor != nil {
+		params.CursorCreatedAt = pgtype.Timestamptz{Time: cursor.Time, Valid: true}
+		params.CursorID = uuid.NullUUID{UUID: cursor.ID, Valid: true}
+	}
+	rows, err := h.q.ListAdminEnrollments(r.Context(), params)
+	if err != nil {
+		httpx.Problem(w, r, 500, "Internal Server Error", "unable to list enrollments")
+		return
+	}
+	items := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, map[string]any{"id": row.ID, "course_id": row.CourseID, "course_title": row.CourseTitle, "student_id": row.StudentID, "student_email": row.StudentEmail, "student_name": row.StudentName, "status": row.Status, "source": row.Source, "completion_percentage": row.CompletionPercentage, "created_at": row.CreatedAt.Time})
+	}
+	response := map[string]any{"items": items}
+	if len(rows) == int(size) {
+		last := rows[len(rows)-1]
+		response["next_cursor"] = httpx.EncodeCursor(last.CreatedAt.Time, last.ID)
 	}
 	httpx.JSON(w, 200, response)
 }

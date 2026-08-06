@@ -222,6 +222,95 @@ func (q *Queries) GetLessonProgress(ctx context.Context, arg GetLessonProgressPa
 	return i, err
 }
 
+const listAdminEnrollments = `-- name: ListAdminEnrollments :many
+SELECT e.id, e.organization_id, e.course_id, e.student_id, e.status, e.source, e.price_minor_snapshot, e.currency_snapshot, e.completion_percentage, e.enrolled_at, e.completed_at, e.expires_at, e.created_at, e.updated_at, c.title AS course_title, u.email AS student_email, u.display_name AS student_name
+FROM enrollments e
+JOIN courses c ON c.id=e.course_id
+JOIN users u ON u.id=e.student_id
+WHERE e.organization_id=$1
+  AND ($2::text IS NULL OR e.status=$2)
+  AND ($3::uuid IS NULL OR e.course_id=$3)
+  AND ($4::uuid IS NULL OR e.student_id=$4)
+  AND ($5::timestamptz IS NULL OR (e.created_at,e.id)<($5,$6::uuid))
+ORDER BY e.created_at DESC,e.id DESC LIMIT $7
+`
+
+type ListAdminEnrollmentsParams struct {
+	OrganizationID  uuid.UUID          `json:"organization_id"`
+	Status          pgtype.Text        `json:"status"`
+	CourseID        uuid.NullUUID      `json:"course_id"`
+	StudentID       uuid.NullUUID      `json:"student_id"`
+	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
+	CursorID        uuid.NullUUID      `json:"cursor_id"`
+	PageSize        int32              `json:"page_size"`
+}
+
+type ListAdminEnrollmentsRow struct {
+	ID                   uuid.UUID          `json:"id"`
+	OrganizationID       uuid.UUID          `json:"organization_id"`
+	CourseID             uuid.UUID          `json:"course_id"`
+	StudentID            uuid.UUID          `json:"student_id"`
+	Status               string             `json:"status"`
+	Source               string             `json:"source"`
+	PriceMinorSnapshot   int64              `json:"price_minor_snapshot"`
+	CurrencySnapshot     string             `json:"currency_snapshot"`
+	CompletionPercentage pgtype.Numeric     `json:"completion_percentage"`
+	EnrolledAt           pgtype.Timestamptz `json:"enrolled_at"`
+	CompletedAt          pgtype.Timestamptz `json:"completed_at"`
+	ExpiresAt            pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	CourseTitle          string             `json:"course_title"`
+	StudentEmail         string             `json:"student_email"`
+	StudentName          string             `json:"student_name"`
+}
+
+func (q *Queries) ListAdminEnrollments(ctx context.Context, arg ListAdminEnrollmentsParams) ([]ListAdminEnrollmentsRow, error) {
+	rows, err := q.db.Query(ctx, listAdminEnrollments,
+		arg.OrganizationID,
+		arg.Status,
+		arg.CourseID,
+		arg.StudentID,
+		arg.CursorCreatedAt,
+		arg.CursorID,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAdminEnrollmentsRow{}
+	for rows.Next() {
+		var i ListAdminEnrollmentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.CourseID,
+			&i.StudentID,
+			&i.Status,
+			&i.Source,
+			&i.PriceMinorSnapshot,
+			&i.CurrencySnapshot,
+			&i.CompletionPercentage,
+			&i.EnrolledAt,
+			&i.CompletedAt,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CourseTitle,
+			&i.StudentEmail,
+			&i.StudentName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCourseEnrollments = `-- name: ListCourseEnrollments :many
 SELECT e.id, e.organization_id, e.course_id, e.student_id, e.status, e.source, e.price_minor_snapshot, e.currency_snapshot, e.completion_percentage, e.enrolled_at, e.completed_at, e.expires_at, e.created_at, e.updated_at,u.email,u.display_name FROM enrollments e JOIN users u ON u.id=e.student_id
 WHERE e.course_id=$1

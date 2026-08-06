@@ -5,15 +5,15 @@ import (
 	"net/http"
 	"strings"
 
-	api "github.com/Faysal9991/edtech_Backend/internal/api"
-	"github.com/Faysal9991/edtech_Backend/internal/data"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/auth"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/httpx"
-	platformid "github.com/Faysal9991/edtech_Backend/internal/platform/id"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	api "github.com/neoscoder/lms-service/internal/api"
+	"github.com/neoscoder/lms-service/internal/data"
+	"github.com/neoscoder/lms-service/internal/platform/auth"
+	"github.com/neoscoder/lms-service/internal/platform/httpx"
+	platformid "github.com/neoscoder/lms-service/internal/platform/id"
 )
 
 type Handler struct {
@@ -281,6 +281,29 @@ func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	detail, err := h.s.Detail(r.Context(), id, includeDraft)
+	if err != nil {
+		handleError(w, r, err)
+		return
+	}
+	httpx.JSON(w, 200, detail)
+}
+
+func (h *Handler) PublicDetailBySlug(w http.ResponseWriter, r *http.Request) {
+	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
+	if slug == "" || len(slug) > 180 {
+		httpx.Problem(w, r, 400, "Invalid Slug", "a valid course slug is required")
+		return
+	}
+	course, err := h.q.GetPublishedCourseBySlug(r.Context(), slug)
+	if errors.Is(err, pgx.ErrNoRows) {
+		httpx.Problem(w, r, 404, "Not Found", "published course not found")
+		return
+	}
+	if err != nil {
+		httpx.Problem(w, r, 500, "Internal Server Error", "unable to load course")
+		return
+	}
+	detail, err := h.s.Detail(r.Context(), course.ID, false)
 	if err != nil {
 		handleError(w, r, err)
 		return

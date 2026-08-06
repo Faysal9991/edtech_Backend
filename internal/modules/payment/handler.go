@@ -4,14 +4,15 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"time"
 
-	api "github.com/Faysal9991/edtech_Backend/internal/api"
-	"github.com/Faysal9991/edtech_Backend/internal/data"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/auth"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/httpx"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	api "github.com/neoscoder/lms-service/internal/api"
+	"github.com/neoscoder/lms-service/internal/data"
+	"github.com/neoscoder/lms-service/internal/platform/auth"
+	"github.com/neoscoder/lms-service/internal/platform/httpx"
 )
 
 type Handler struct {
@@ -152,6 +153,57 @@ func (h *Handler) ListPayments(w http.ResponseWriter, r *http.Request) {
 	items := make([]any, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, map[string]any{"id": row.ID, "order_id": row.OrderID, "kind": row.Kind, "status": row.Status, "amount_minor": row.AmountMinor, "currency": row.Currency, "created_at": row.CreatedAt.Time})
+	}
+	response := map[string]any{"items": items}
+	if len(rows) == int(size) {
+		last := rows[len(rows)-1]
+		response["next_cursor"] = httpx.EncodeCursor(last.CreatedAt.Time, last.ID)
+	}
+	httpx.JSON(w, 200, response)
+}
+
+func (h *Handler) ListAdmin(w http.ResponseWriter, r *http.Request) {
+	m, ok := auth.MembershipFrom(r.Context())
+	if !ok {
+		httpx.Problem(w, r, 400, "Organization Required", "an organization membership is required")
+		return
+	}
+	size, err := httpx.PageSize(r)
+	if err != nil {
+		httpx.Problem(w, r, 400, "Invalid Pagination", err.Error())
+		return
+	}
+	cursor, err := httpx.ParseCursor(r.URL.Query().Get("cursor"))
+	if err != nil {
+		httpx.Problem(w, r, 400, "Invalid Pagination", err.Error())
+		return
+	}
+	params := data.ListAdminPaymentOrdersParams{OrganizationID: m.OrganizationID, PageSize: size}
+	if status := r.URL.Query().Get("status"); status != "" {
+		params.Status = pgtype.Text{String: status, Valid: true}
+	}
+	for key, target := range map[string]*pgtype.Timestamptz{"from": &params.FromTime, "to": &params.ToTime} {
+		if raw := r.URL.Query().Get(key); raw != "" {
+			parsed, parseErr := time.Parse(time.RFC3339, raw)
+			if parseErr != nil {
+				httpx.Problem(w, r, 400, "Invalid Date", key+" must be RFC3339")
+				return
+			}
+			*target = pgtype.Timestamptz{Time: parsed.UTC(), Valid: true}
+		}
+	}
+	if cursor != nil {
+		params.CursorCreatedAt = pgtype.Timestamptz{Time: cursor.Time, Valid: true}
+		params.CursorID = uuid.NullUUID{UUID: cursor.ID, Valid: true}
+	}
+	rows, err := h.q.ListAdminPaymentOrders(r.Context(), params)
+	if err != nil {
+		httpx.Problem(w, r, 500, "Internal Server Error", "unable to list payments")
+		return
+	}
+	items := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, map[string]any{"id": row.ID, "user_id": row.UserID, "email": row.Email, "display_name": row.DisplayName, "status": row.Status, "amount_minor": row.AmountMinor, "currency": row.Currency, "provider_payment_intent_id": row.ProviderPaymentIntentID, "created_at": row.CreatedAt.Time})
 	}
 	response := map[string]any{"items": items}
 	if len(rows) == int(size) {

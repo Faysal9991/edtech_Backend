@@ -8,9 +8,9 @@ import (
 
 type Principal struct {
 	UserID      uuid.UUID
-	FirebaseUID string
 	Email       string
 	DisplayName string
+	Roles       []string
 }
 
 type principalKey struct{}

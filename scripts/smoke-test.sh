@@ -2,64 +2,163 @@
 set -euo pipefail
 
 api_url="${PUBLIC_API_URL:-http://localhost:8080}"
-database_url="${DATABASE_URL:-postgres://lms:lms@localhost:5432/lms?sslmode=disable}"
-student_token="dev:student1@acme.test"
-instructor_token="dev:instructor1@acme.test"
-auth=(-H "Authorization: Bearer ${student_token}")
-
-curl -fsS "${api_url}/health/ready" >/dev/null
-me_json=$(curl -fsS -X POST "${auth[@]}" "${api_url}/api/v1/auth/bootstrap")
-organization_id=$(jq -er '.memberships[0].organization_id' <<<"${me_json}")
-course_json=$(curl -fsS "${auth[@]}" "${api_url}/api/v1/courses" | jq -ec '.items[] | select(.is_free == true)' | head -1)
-course_id=$(jq -er '.id' <<<"${course_json}")
-enrollment_json=$(curl -fsS -X POST "${auth[@]}" -H 'Idempotency-Key: smoke-free-enrollment' "${api_url}/api/v1/courses/${course_id}/enroll")
-enrollment_id=$(jq -er '.id' <<<"${enrollment_json}")
-detail_json=$(curl -fsS "${auth[@]}" "${api_url}/api/v1/courses/${course_id}")
-while IFS= read -r lesson_id; do
-  curl -fsS -X PUT "${auth[@]}" -H 'Content-Type: application/json' --data '{"position_seconds":0,"watched_seconds_delta":0,"manual_complete":true}' "${api_url}/api/v1/enrollments/${enrollment_id}/lessons/${lesson_id}/progress" >/dev/null
-done < <(jq -er '.modules[].lessons[] | select(.type != "video") | .id' <<<"${detail_json}")
-
-quiz_id=$(curl -fsS "${auth[@]}" "${api_url}/api/v1/quizzes?course_id=${course_id}" | jq -er '.items[0].id')
-attempt_json=$(curl -fsS -X POST "${auth[@]}" "${api_url}/api/v1/quizzes/${quiz_id}/attempts")
-attempt_id=$(jq -er '.id' <<<"${attempt_json}")
-question_id=$(jq -er '.questions[0].id' <<<"${attempt_json}")
-option_id=$(jq -er '.questions[0].options[0].id' <<<"${attempt_json}")
-curl -fsS -X PUT "${auth[@]}" -H 'Content-Type: application/json' --data "{\"question_id\":\"${question_id}\",\"selected_option_ids\":[\"${option_id}\"]}" "${api_url}/api/v1/quiz-attempts/${attempt_id}/answers" >/dev/null
-curl -fsS -X POST "${auth[@]}" "${api_url}/api/v1/quiz-attempts/${attempt_id}/submit" | jq -e '.passed == true' >/dev/null
-
-assignment_id=$(curl -fsS "${auth[@]}" "${api_url}/api/v1/assignments?course_id=${course_id}" | jq -er '.items[0].id')
-submission_json=$(curl -fsS -X POST "${auth[@]}" -H 'Content-Type: application/json' --data '{"text_content":"Smoke-test assignment submission."}' "${api_url}/api/v1/assignments/${assignment_id}/submissions")
-submission_id=$(jq -er '.id' <<<"${submission_json}")
-curl -fsS -X POST "${auth[@]}" "${api_url}/api/v1/assignment-submissions/${submission_id}/submit" >/dev/null
-curl -fsS -X POST -H "Authorization: Bearer ${instructor_token}" -H "X-Organization-ID: ${organization_id}" -H 'Content-Type: application/json' --data '{"points":95,"feedback":"Smoke test passed."}' "${api_url}/api/v1/assignment-submissions/${submission_id}/grade" >/dev/null
-
-paid_course_id=$(curl -fsS "${auth[@]}" "${api_url}/api/v1/courses" | jq -er '.items[] | select(.is_free == false) | .id' | head -1)
-order_json=$(curl -fsS -X POST "${auth[@]}" -H 'Content-Type: application/json' -H 'Idempotency-Key: smoke-paid-order-v1' --data "{\"course_id\":\"${paid_course_id}\"}" "${api_url}/api/v1/orders")
-order_id=$(jq -er '.id' <<<"${order_json}")
-replayed_order_id=$(curl -fsS -X POST "${auth[@]}" -H 'Content-Type: application/json' -H 'Idempotency-Key: smoke-paid-order-v1' --data "{\"course_id\":\"${paid_course_id}\"}" "${api_url}/api/v1/orders" | jq -er '.id')
-[[ "${order_id}" == "${replayed_order_id}" ]]
-curl -fsS -X POST "${auth[@]}" "${api_url}/api/v1/orders/${order_id}/payment-intent" | jq -e '.client_secret | length > 0' >/dev/null
-stripe_timestamp=$(date +%s)
-stripe_event=$(jq -cn --arg order_id "${order_id}" --arg intent_id "pi_test_${order_id}" '{id:"evt_smoke_payment",type:"payment_intent.succeeded",data:{object:{id:$intent_id,status:"succeeded",amount_received:100000,currency:"bdt",metadata:{order_id:$order_id}}}}')
+admin_email="${SEED_ADMIN_EMAIL:-admin@lms.local}"
+admin_password="${SEED_ADMIN_PASSWORD:-local-admin-password-change-before-use}"
+demo_password="${SEED_DEMO_PASSWORD:-local-demo-password-change-before-use}"
 stripe_secret="${STRIPE_WEBHOOK_SECRET:-whsec_replace_me}"
-stripe_signature=$(printf '%s.%s' "${stripe_timestamp}" "${stripe_event}" | openssl dgst -sha256 -hmac "${stripe_secret}" | awk '{print $NF}')
-for _ in 1 2; do
-  curl -fsS -X POST -H 'Content-Type: application/json' -H "Stripe-Signature: t=${stripe_timestamp},v1=${stripe_signature}" --data "${stripe_event}" "${api_url}/api/v1/webhooks/stripe" >/dev/null
-done
-curl -fsS "${auth[@]}" "${api_url}/api/v1/enrollments" | jq -e --arg course_id "${paid_course_id}" '.items | any(.course_id == $course_id and .status == "active")' >/dev/null
+run_id="$(date +%s)-$$"
+teacher_email="smoke-teacher-${run_id}@example.test"
+student_email="smoke-student-${run_id}@example.test"
+user_password="Smoke-Test-${run_id}-Password!"
 
-for _ in $(seq 1 30); do
-  certificate_json=$(curl -fsS "${auth[@]}" "${api_url}/api/v1/certificates" | jq -ec '.items[]? | select(.status == "ready")' | head -1 || true)
+command -v curl >/dev/null
+command -v jq >/dev/null
+command -v openssl >/dev/null
+
+if [[ "${SMOKE_RUN_SEED:-true}" == "true" ]]; then
+  if docker compose ps --status running postgres 2>/dev/null | grep -q postgres; then
+    docker compose --profile tools run --rm seed >/dev/null
+  else
+    : "${DATABASE_URL:?DATABASE_URL is required when PostgreSQL is not running through this Compose project}"
+    APP_ENV="${APP_ENV:-development}" \
+      SEED_ADMIN_EMAIL="${admin_email}" \
+      SEED_ADMIN_DISPLAY_NAME="${SEED_ADMIN_DISPLAY_NAME:-Development Administrator}" \
+      SEED_ADMIN_PASSWORD="${admin_password}" \
+      SEED_DEMO_PASSWORD="${demo_password}" \
+      go run ./cmd/seed >/dev/null
+  fi
+fi
+
+curl -fsS "${api_url}/health/ready" | jq -e '.status == "ready"' >/dev/null
+
+login() {
+  local email="$1" password="$2"
+  curl -fsS -X POST -H 'Content-Type: application/json' \
+    --data "$(jq -cn --arg email "${email}" --arg password "${password}" '{email:$email,password:$password}')" \
+    "${api_url}/api/v1/auth/login" | jq -er '.access_token'
+}
+
+register_and_verify() {
+  local email="$1" display_name="$2" response token
+  response="$(curl -fsS -X POST -H 'Content-Type: application/json' \
+    --data "$(jq -cn --arg email "${email}" --arg password "${user_password}" --arg name "${display_name}" '{email:$email,password:$password,display_name:$name}')" \
+    "${api_url}/api/v1/auth/register")"
+  token="$(jq -er '.verification_token' <<<"${response}")"
+  curl -fsS -o /dev/null -X POST -H 'Content-Type: application/json' \
+    --data "$(jq -cn --arg token "${token}" '{token:$token}')" \
+    "${api_url}/api/v1/auth/verify-email"
+  jq -er '.user.id' <<<"${response}"
+}
+
+admin_token="$(login "${admin_email}" "${admin_password}")"
+admin_auth=(-H "Authorization: Bearer ${admin_token}")
+
+teacher_id="$(register_and_verify "${teacher_email}" 'Smoke Teacher')"
+student_id="$(register_and_verify "${student_email}" 'Smoke Student')"
+
+curl -fsS -o /dev/null -X PUT "${admin_auth[@]}" -H 'Content-Type: application/json' \
+  --data '{"roles":["teacher"]}' "${api_url}/api/v1/admin/users/${teacher_id}/roles"
+curl -fsS -o /dev/null -X PUT "${admin_auth[@]}" -H 'Content-Type: application/json' \
+  --data '{"roles":["student"]}' "${api_url}/api/v1/admin/users/${student_id}/roles"
+
+teacher_token="$(login "${teacher_email}" "${user_password}")"
+student_token="$(login "${student_email}" "${user_password}")"
+teacher_auth=(-H "Authorization: Bearer ${teacher_token}")
+student_auth=(-H "Authorization: Bearer ${student_token}")
+
+course_slug="smoke-phase-1-${run_id}"
+course_json="$(curl -fsS -X POST "${teacher_auth[@]}" -H 'Content-Type: application/json' \
+  --data "$(jq -cn --arg slug "${course_slug}" '{title:"Smoke Phase-1 Course",slug:$slug,description:"End-to-end smoke course with valid published content.",language:"en",level:"beginner",is_free:true,price_minor:0,currency:"BDT",version:0}')" \
+  "${api_url}/api/v1/teacher/courses")"
+course_id="$(jq -er '.id' <<<"${course_json}")"
+
+module_json="$(curl -fsS -X POST "${teacher_auth[@]}" -H 'Content-Type: application/json' \
+  --data '{"title":"Smoke Module","description":"Required content","position":1}' \
+  "${api_url}/api/v1/teacher/courses/${course_id}/modules")"
+module_id="$(jq -er '.id' <<<"${module_json}")"
+
+lesson_json="$(curl -fsS -X POST "${teacher_auth[@]}" -H 'Content-Type: application/json' \
+  --data '{"title":"Smoke Lesson","description":"Complete this lesson","lesson_type":"text","body":"Smoke content","position":1,"is_preview":false,"is_required":true,"is_published":true}' \
+  "${api_url}/api/v1/teacher/modules/${module_id}/lessons")"
+lesson_id="$(jq -er '.id' <<<"${lesson_json}")"
+
+curl -fsS -o /dev/null -X POST "${teacher_auth[@]}" "${api_url}/api/v1/teacher/courses/${course_id}/submit-review"
+curl -fsS -o /dev/null -X POST "${admin_auth[@]}" "${api_url}/api/v1/admin/courses/${course_id}/publish"
+curl -fsS "${api_url}/api/v1/courses/${course_slug}" | jq -e --arg id "${course_id}" '.course.id == $id or .id == $id' >/dev/null
+
+enrollment_json="$(curl -fsS -X POST "${student_auth[@]}" -H "Idempotency-Key: smoke-enroll-${run_id}" \
+  "${api_url}/api/v1/courses/${course_id}/enroll")"
+enrollment_id="$(jq -er '.id' <<<"${enrollment_json}")"
+curl -fsS -o /dev/null -X PUT "${student_auth[@]}" -H 'Content-Type: application/json' \
+  --data '{"position_seconds":0,"watched_seconds_delta":0,"manual_complete":true}' \
+  "${api_url}/api/v1/student/enrollments/${enrollment_id}/lessons/${lesson_id}/progress"
+
+seed_course_json="$(curl -fsS "${api_url}/api/v1/courses/production-go-foundations")"
+seed_course_id="$(jq -er '.course.id // .id' <<<"${seed_course_json}")"
+curl -fsS -o /dev/null -X POST "${student_auth[@]}" -H "Idempotency-Key: smoke-seed-enroll-${run_id}" \
+  "${api_url}/api/v1/courses/${seed_course_id}/enroll"
+
+quiz_id="$(curl -fsS "${admin_auth[@]}" "${api_url}/api/v1/teacher/quizzes?course_id=${seed_course_id}" | jq -er '.items[0].id')"
+quiz_detail="$(curl -fsS "${admin_auth[@]}" "${api_url}/api/v1/teacher/quizzes/${quiz_id}")"
+correct_option_id="$(jq -er '.questions[0].options[] | select(.is_correct == true) | .id' <<<"${quiz_detail}")"
+attempt_json="$(curl -fsS -X POST "${student_auth[@]}" "${api_url}/api/v1/student/quizzes/${quiz_id}/attempts")"
+attempt_id="$(jq -er '.id' <<<"${attempt_json}")"
+question_id="$(jq -er '.questions[0].id' <<<"${attempt_json}")"
+if jq -e '.. | objects | has("correct") or has("is_correct")' <<<"${attempt_json}" >/dev/null; then
+  echo 'student quiz payload leaked a correct-answer flag' >&2
+  exit 1
+fi
+curl -fsS -o /dev/null -X PUT "${student_auth[@]}" -H 'Content-Type: application/json' \
+  --data "$(jq -cn --arg question "${question_id}" --arg option "${correct_option_id}" '{question_id:$question,selected_option_ids:[$option]}')" \
+  "${api_url}/api/v1/student/quiz-attempts/${attempt_id}/answers"
+curl -fsS -X POST "${student_auth[@]}" "${api_url}/api/v1/student/quiz-attempts/${attempt_id}/submit" | jq -e '.passed == true' >/dev/null
+
+assignment_id="$(curl -fsS "${admin_auth[@]}" "${api_url}/api/v1/teacher/assignments?course_id=${seed_course_id}" | jq -er '.items[0].id')"
+submission_json="$(curl -fsS -X POST "${student_auth[@]}" -H 'Content-Type: application/json' \
+  --data '{"text_content":"Phase-1 smoke assignment submission."}' \
+  "${api_url}/api/v1/student/assignments/${assignment_id}/submissions")"
+submission_id="$(jq -er '.id' <<<"${submission_json}")"
+curl -fsS -o /dev/null -X POST "${student_auth[@]}" "${api_url}/api/v1/student/submissions/${submission_id}/submit"
+curl -fsS -o /dev/null -X PATCH "${admin_auth[@]}" -H 'Content-Type: application/json' \
+  --data '{"points":95,"feedback":"Smoke journey passed."}' \
+  "${api_url}/api/v1/teacher/submissions/${submission_id}/grade"
+
+live_id="$(curl -fsS "${admin_auth[@]}" "${api_url}/api/v1/teacher/live-classes?status=scheduled,live" | jq -er --arg course "${seed_course_id}" '.items[] | select(.course_id == $course) | .id' | head -1)"
+curl -fsS -X POST "${student_auth[@]}" "${api_url}/api/v1/live-classes/${live_id}/token" | jq -e '.token | length > 40' >/dev/null
+
+paid_course_json="$(curl -fsS "${api_url}/api/v1/courses/advanced-go-systems")"
+paid_course_id="$(jq -er '.course.id // .id' <<<"${paid_course_json}")"
+order_json="$(curl -fsS -X POST "${student_auth[@]}" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: smoke-order-${run_id}" --data "$(jq -cn --arg id "${paid_course_id}" '{course_id:$id}')" \
+  "${api_url}/api/v1/payments/orders")"
+order_id="$(jq -er '.id' <<<"${order_json}")"
+replayed_order_id="$(curl -fsS -X POST "${student_auth[@]}" -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: smoke-order-${run_id}" --data "$(jq -cn --arg id "${paid_course_id}" '{course_id:$id}')" \
+  "${api_url}/api/v1/payments/orders" | jq -er '.id')"
+[[ "${order_id}" == "${replayed_order_id}" ]]
+curl -fsS -X POST "${student_auth[@]}" "${api_url}/api/v1/payments/orders/${order_id}/payment-intent" | jq -e '.client_secret | length > 0' >/dev/null
+
+stripe_timestamp="$(date +%s)"
+stripe_event="$(jq -cn --arg event "evt_smoke_${run_id}" --arg order "${order_id}" --arg intent "pi_test_${order_id}" '{id:$event,type:"payment_intent.succeeded",data:{object:{id:$intent,status:"succeeded",amount_received:100000,currency:"bdt",metadata:{order_id:$order}}}}')"
+stripe_signature="$(printf '%s.%s' "${stripe_timestamp}" "${stripe_event}" | openssl dgst -sha256 -hmac "${stripe_secret}" | awk '{print $NF}')"
+for _ in 1 2; do
+  curl -fsS -o /dev/null -X POST -H 'Content-Type: application/json' \
+    -H "Stripe-Signature: t=${stripe_timestamp},v1=${stripe_signature}" --data "${stripe_event}" \
+    "${api_url}/api/v1/payments/webhooks/stripe"
+done
+curl -fsS "${student_auth[@]}" "${api_url}/api/v1/student/enrollments" | \
+  jq -e --arg course "${paid_course_id}" '.items | any(.course_id == $course and .status == "active")' >/dev/null
+
+for _ in $(seq 1 45); do
+  certificate_json="$(curl -fsS "${student_auth[@]}" "${api_url}/api/v1/student/certificates" | jq -ec --arg course "${course_id}" '.items[]? | select(.course_id == $course and .status == "ready")' | head -1 || true)"
   if [[ -n "${certificate_json}" ]]; then
-    certificate_id=$(jq -er '.id' <<<"${certificate_json}")
-    curl -fsS -o /dev/null -L "${auth[@]}" "${api_url}/api/v1/certificates/${certificate_id}/download"
-    verification_code=$(psql "${database_url}" -Atc "select verification_code from certificates where id='${certificate_id}'")
-    curl -fsS "${api_url}/api/v1/public/certificates/verify/${verification_code}" | jq -e '.valid == true' >/dev/null
-    echo "smoke test passed"
+    certificate_number="$(jq -er '.certificate_number' <<<"${certificate_json}")"
+    curl -fsS "${api_url}/api/v1/certificates/verify/${certificate_number}" | jq -e '.valid == true' >/dev/null
+    echo "smoke test passed: users, course, enrollment, progress, quiz, assignment, live token, mock payment, and certificate"
     exit 0
   fi
   sleep 1
 done
 
-echo "certificate was not ready within 30 seconds" >&2
+echo 'certificate was not ready within 45 seconds' >&2
 exit 1

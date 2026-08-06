@@ -67,7 +67,7 @@ func (q *Queries) GetSuperAdminRoleForUser(ctx context.Context, userID uuid.UUID
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, firebase_uid, email, display_name, avatar_url, status, created_at, updated_at, last_login_at FROM users WHERE id = $1
+SELECT id, firebase_uid, email, display_name, avatar_url, status, created_at, updated_at, last_login_at, password_hash, email_verified_at, failed_login_count, locked_until FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
@@ -83,12 +83,16 @@ func (q *Queries) GetUser(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastLoginAt,
+		&i.PasswordHash,
+		&i.EmailVerifiedAt,
+		&i.FailedLoginCount,
+		&i.LockedUntil,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, firebase_uid, email, display_name, avatar_url, status, created_at, updated_at, last_login_at FROM users WHERE lower(email) = lower($1)
+SELECT id, firebase_uid, email, display_name, avatar_url, status, created_at, updated_at, last_login_at, password_hash, email_verified_at, failed_login_count, locked_until FROM users WHERE lower(email) = lower($1)
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (User, error) {
@@ -104,12 +108,16 @@ func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (User, error
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastLoginAt,
+		&i.PasswordHash,
+		&i.EmailVerifiedAt,
+		&i.FailedLoginCount,
+		&i.LockedUntil,
 	)
 	return i, err
 }
 
 const getUserByFirebaseUID = `-- name: GetUserByFirebaseUID :one
-SELECT id, firebase_uid, email, display_name, avatar_url, status, created_at, updated_at, last_login_at FROM users WHERE firebase_uid = $1
+SELECT id, firebase_uid, email, display_name, avatar_url, status, created_at, updated_at, last_login_at, password_hash, email_verified_at, failed_login_count, locked_until FROM users WHERE firebase_uid = $1
 `
 
 func (q *Queries) GetUserByFirebaseUID(ctx context.Context, firebaseUid string) (User, error) {
@@ -125,6 +133,10 @@ func (q *Queries) GetUserByFirebaseUID(ctx context.Context, firebaseUid string) 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastLoginAt,
+		&i.PasswordHash,
+		&i.EmailVerifiedAt,
+		&i.FailedLoginCount,
+		&i.LockedUntil,
 	)
 	return i, err
 }
@@ -185,7 +197,7 @@ func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) 
 }
 
 const listOrganizationAuditLogs = `-- name: ListOrganizationAuditLogs :many
-SELECT a.id, a.organization_id, a.actor_user_id, a.action, a.resource_type, a.resource_id, a.request_id, a.ip_address, a.before_data, a.after_data, a.created_at,u.email AS actor_email
+SELECT a.id, a.organization_id, a.actor_user_id, a.action, a.resource_type, a.resource_id, a.request_id, a.ip_address, a.before_data, a.after_data, a.created_at, a.metadata, a.user_agent,u.email AS actor_email
 FROM audit_logs a LEFT JOIN users u ON u.id=a.actor_user_id
 WHERE a.organization_id=$1
  AND ($2::timestamptz IS NULL OR (a.created_at,a.id)<($2,$3::uuid))
@@ -211,6 +223,8 @@ type ListOrganizationAuditLogsRow struct {
 	BeforeData     []byte             `json:"before_data"`
 	AfterData      []byte             `json:"after_data"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	Metadata       []byte             `json:"metadata"`
+	UserAgent      string             `json:"user_agent"`
 	ActorEmail     pgtype.Text        `json:"actor_email"`
 }
 
@@ -240,6 +254,8 @@ func (q *Queries) ListOrganizationAuditLogs(ctx context.Context, arg ListOrganiz
 			&i.BeforeData,
 			&i.AfterData,
 			&i.CreatedAt,
+			&i.Metadata,
+			&i.UserAgent,
 			&i.ActorEmail,
 		); err != nil {
 			return nil, err
@@ -308,7 +324,7 @@ SET email = lower(EXCLUDED.email),
     display_name = CASE WHEN EXCLUDED.display_name = '' THEN users.display_name ELSE EXCLUDED.display_name END,
     last_login_at = now(),
     updated_at = now()
-RETURNING id, firebase_uid, email, display_name, avatar_url, status, created_at, updated_at, last_login_at
+RETURNING id, firebase_uid, email, display_name, avatar_url, status, created_at, updated_at, last_login_at, password_hash, email_verified_at, failed_login_count, locked_until
 `
 
 type UpsertUserByFirebaseUIDParams struct {
@@ -336,6 +352,10 @@ func (q *Queries) UpsertUserByFirebaseUID(ctx context.Context, arg UpsertUserByF
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastLoginAt,
+		&i.PasswordHash,
+		&i.EmailVerifiedAt,
+		&i.FailedLoginCount,
+		&i.LockedUntil,
 	)
 	return i, err
 }

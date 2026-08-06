@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16.14-alpine3.24
+        env:
+          POSTGRES_DB: lms
+          POSTGRES_USER: lms
+          POSTGRES_PASSWORD: lms
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U lms -d lms"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7.4.10-alpine3.21
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      APP_ENV: test
+      DATABASE_URL: postgres://lms:lms@localhost:5432/lms?sslmode=disable
+      TEST_DATABASE_URL: postgres://lms:lms@localhost:5432/lms?sslmode=disable
+      REDIS_URL: redis://localhost:6379/0
+      S3_ENDPOINT: http://localhost:9000
+      S3_BUCKET: lms-private
+      JWT_SIGNING_KEY: ci-only-jwt-signing-key-with-32-characters
+      DEVICE_TOKEN_ENCRYPTION_KEY: ci-only-device-token-key-with-32-characters
+      PAYMENT_PROVIDER: mock
+      NOTIFICATION_PROVIDER: log
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go mod download
+      - run: make generate
+      - run: git diff --exit-code
+      - run: make vet
+      - run: make test
+      - run: make test-race
+      - run: make test-integration
+      - run: make lint
+      - run: make security
+      - name: Validate migration up/down/up
+        run: |
+          go run ./cmd/migrate up
+          go run ./cmd/migrate down
+          go run ./cmd/migrate up
+      - run: docker build --build-arg TARGET=api -t lms-service-api:ci .
+      - run: docker build --build-arg TARGET=worker -t lms-service-worker:ci .

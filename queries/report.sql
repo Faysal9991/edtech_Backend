@@ -1,12 +1,62 @@
 -- name: OrganizationOverview :one
 SELECT
- (SELECT count(DISTINCT m.user_id) FROM organization_memberships m JOIN membership_roles mr ON mr.membership_id=m.id JOIN roles r ON r.id=mr.role_id WHERE m.organization_id=sqlc.arg(organization_id) AND m.status='active' AND r.code='student') AS total_students,
- (SELECT count(DISTINCT m.user_id) FROM organization_memberships m JOIN membership_roles mr ON mr.membership_id=m.id JOIN roles r ON r.id=mr.role_id WHERE m.organization_id=sqlc.arg(organization_id) AND m.status='active' AND r.code='instructor') AS total_instructors,
+ (SELECT count(DISTINCT m.user_id) FROM organization_memberships m JOIN membership_roles mr ON mr.membership_id=m.id JOIN roles r ON r.id=mr.role_id JOIN users u ON u.id=m.user_id WHERE m.organization_id=sqlc.arg(organization_id) AND m.status='active' AND u.status='active' AND r.code='student') AS total_students,
+ (SELECT count(DISTINCT m.user_id) FROM organization_memberships m JOIN membership_roles mr ON mr.membership_id=m.id JOIN roles r ON r.id=mr.role_id JOIN users u ON u.id=m.user_id WHERE m.organization_id=sqlc.arg(organization_id) AND m.status='active' AND u.status='active' AND r.code='instructor') AS total_instructors,
  (SELECT count(*) FROM courses c WHERE c.organization_id=sqlc.arg(organization_id) AND c.status='published') AS published_courses,
+ (SELECT count(*) FROM enrollments e WHERE e.organization_id=sqlc.arg(organization_id)) AS total_enrollments,
  (SELECT count(*) FROM enrollments e WHERE e.organization_id=sqlc.arg(organization_id) AND e.status='active') AS active_enrollments,
  (SELECT count(*) FROM enrollments e WHERE e.organization_id=sqlc.arg(organization_id) AND e.status='completed') AS completed_enrollments,
+ (SELECT count(*) FROM orders o WHERE o.organization_id=sqlc.arg(organization_id) AND o.status IN ('pending','processing','requires_action') AND o.created_at>=sqlc.arg(from_time) AND o.created_at<sqlc.arg(to_time)) AS pending_payments,
+ (SELECT count(*) FROM orders o WHERE o.organization_id=sqlc.arg(organization_id) AND o.status='paid' AND o.created_at>=sqlc.arg(from_time) AND o.created_at<sqlc.arg(to_time)) AS paid_payments,
+ (SELECT count(*) FROM orders o WHERE o.organization_id=sqlc.arg(organization_id) AND o.status='failed' AND o.created_at>=sqlc.arg(from_time) AND o.created_at<sqlc.arg(to_time)) AS failed_payments,
+ (SELECT count(*) FROM orders o WHERE o.organization_id=sqlc.arg(organization_id) AND o.status='refunded' AND o.created_at>=sqlc.arg(from_time) AND o.created_at<sqlc.arg(to_time)) AS refunded_payments,
  (SELECT COALESCE(sum(o.amount_minor),0)::bigint FROM orders o WHERE o.organization_id=sqlc.arg(organization_id) AND o.status IN ('paid','refunded') AND o.created_at>=sqlc.arg(from_time) AND o.created_at<sqlc.arg(to_time)) AS gross_revenue_minor,
  (SELECT COALESCE(sum(r.amount_minor),0)::bigint FROM refunds r JOIN orders o ON o.id=r.order_id WHERE o.organization_id=sqlc.arg(organization_id) AND r.status='succeeded' AND r.created_at>=sqlc.arg(from_time) AND r.created_at<sqlc.arg(to_time)) AS refund_amount_minor;
+
+-- name: TeacherOverview :one
+SELECT
+ count(DISTINCT c.id) AS total_courses,
+ count(DISTINCT c.id) FILTER (WHERE c.status='published') AS published_courses,
+ count(DISTINCT e.student_id) AS total_students,
+ count(e.id) FILTER (WHERE e.status='active') AS active_enrollments,
+ count(e.id) FILTER (WHERE e.status='completed') AS completed_enrollments,
+ COALESCE(round(avg(e.completion_percentage),2),0)::numeric AS average_completion_percentage,
+ COALESCE((SELECT round(avg(qa.percentage),2)
+   FROM quiz_attempts qa
+   JOIN quizzes q ON q.id=qa.quiz_id
+   JOIN course_instructors qci ON qci.course_id=q.course_id
+   JOIN courses qc ON qc.id=q.course_id
+   WHERE qci.instructor_id=sqlc.arg(instructor_id)
+     AND qc.organization_id=sqlc.arg(organization_id)
+     AND qa.status='graded'
+     AND qa.submitted_at>=sqlc.arg(from_time)
+     AND qa.submitted_at<sqlc.arg(to_time)),0)::numeric AS average_quiz_percentage,
+ (SELECT count(*)
+   FROM assignment_submissions sub
+   JOIN assignments a ON a.id=sub.assignment_id
+   JOIN course_instructors aci ON aci.course_id=a.course_id
+   JOIN courses ac ON ac.id=a.course_id
+   WHERE aci.instructor_id=sqlc.arg(instructor_id)
+     AND ac.organization_id=sqlc.arg(organization_id)
+     AND sub.submitted_at>=sqlc.arg(from_time)
+     AND sub.submitted_at<sqlc.arg(to_time)) AS assignment_submissions,
+ (SELECT count(g.id)
+   FROM grades g
+   JOIN assignment_submissions sub ON sub.id=g.assignment_submission_id
+   JOIN assignments a ON a.id=sub.assignment_id
+   JOIN course_instructors aci ON aci.course_id=a.course_id
+   JOIN courses ac ON ac.id=a.course_id
+   WHERE aci.instructor_id=sqlc.arg(instructor_id)
+     AND ac.organization_id=sqlc.arg(organization_id)
+     AND sub.submitted_at>=sqlc.arg(from_time)
+     AND sub.submitted_at<sqlc.arg(to_time)) AS graded_assignments
+FROM course_instructors ci
+JOIN courses c ON c.id=ci.course_id
+LEFT JOIN enrollments e ON e.course_id=c.id
+ AND e.created_at>=sqlc.arg(from_time)
+ AND e.created_at<sqlc.arg(to_time)
+WHERE ci.instructor_id=sqlc.arg(instructor_id)
+  AND c.organization_id=sqlc.arg(organization_id);
 
 -- name: EnrollmentTrend :many
 SELECT date_trunc('day',created_at) AS day,count(*) AS enrollments,count(*) FILTER(WHERE status='completed') AS completions

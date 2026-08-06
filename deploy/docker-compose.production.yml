@@ -1,0 +1,41 @@
+name: lms-service-production
+services:
+  migrate:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args: {TARGET: migrate}
+    env_file: ../.env.production
+    command: ["up"]
+    restart: "no"
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    env_file: ../.env.production
+    restart: unless-stopped
+    init: true
+    ports: ["127.0.0.1:8080:8080"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    deploy:
+      resources:
+        limits: {cpus: "1.0", memory: 512M}
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.worker
+    env_file: ../.env.production
+    restart: unless-stopped
+    init: true
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 8
+    deploy:
+      resources:
+        limits: {cpus: "2.0", memory: 2G}

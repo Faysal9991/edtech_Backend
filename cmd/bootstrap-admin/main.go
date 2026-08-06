@@ -7,10 +7,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Faysal9991/edtech_Backend/internal/platform/config"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/database"
-	platformid "github.com/Faysal9991/edtech_Backend/internal/platform/id"
 	"github.com/jackc/pgx/v5"
+	"github.com/neoscoder/lms-service/internal/platform/auth"
+	"github.com/neoscoder/lms-service/internal/platform/config"
+	"github.com/neoscoder/lms-service/internal/platform/database"
+	platformid "github.com/neoscoder/lms-service/internal/platform/id"
 )
 
 func main() {
@@ -23,13 +24,17 @@ func run() error {
 	if os.Getenv("BOOTSTRAP_ADMIN_CONFIRM") != "CREATE_FIRST_SUPER_ADMIN" {
 		return errors.New("set BOOTSTRAP_ADMIN_CONFIRM=CREATE_FIRST_SUPER_ADMIN to acknowledge the one-shot operation")
 	}
-	uid := strings.TrimSpace(os.Getenv("BOOTSTRAP_FIREBASE_UID"))
 	email := strings.ToLower(strings.TrimSpace(os.Getenv("BOOTSTRAP_EMAIL")))
+	password := os.Getenv("BOOTSTRAP_PASSWORD")
 	name := strings.TrimSpace(os.Getenv("BOOTSTRAP_DISPLAY_NAME"))
 	orgName := strings.TrimSpace(os.Getenv("BOOTSTRAP_ORGANIZATION_NAME"))
 	orgSlug := strings.ToLower(strings.TrimSpace(os.Getenv("BOOTSTRAP_ORGANIZATION_SLUG")))
-	if uid == "" || !strings.Contains(email, "@") || name == "" || orgName == "" || orgSlug == "" {
-		return errors.New("BOOTSTRAP_FIREBASE_UID, BOOTSTRAP_EMAIL, BOOTSTRAP_DISPLAY_NAME, BOOTSTRAP_ORGANIZATION_NAME, and BOOTSTRAP_ORGANIZATION_SLUG are required")
+	if !strings.Contains(email, "@") || len(password) < 12 || name == "" || orgName == "" || orgSlug == "" {
+		return errors.New("BOOTSTRAP_EMAIL, BOOTSTRAP_PASSWORD (12+ characters), BOOTSTRAP_DISPLAY_NAME, BOOTSTRAP_ORGANIZATION_NAME, and BOOTSTRAP_ORGANIZATION_SLUG are required")
+	}
+	passwordHash, err := auth.NewPasswordHasher(config.Password{MemoryKiB: 64 * 1024, Iterations: 3, Parallelism: 2, SaltBytes: 16, KeyBytes: 32}).Hash(password)
+	if err != nil {
+		return err
 	}
 	databaseConfig, err := config.LoadDatabase()
 	if err != nil {
@@ -55,7 +60,7 @@ func run() error {
 			return err
 		}
 		userID := ids.New()
-		if err := tx.QueryRow(ctx, "INSERT INTO users(id,firebase_uid,email,display_name,status) VALUES($1,$2,$3,$4,'active') ON CONFLICT(firebase_uid) DO UPDATE SET email=EXCLUDED.email,display_name=EXCLUDED.display_name,status='active' RETURNING id", userID, uid, email, name).Scan(&userID); err != nil {
+		if err := tx.QueryRow(ctx, "INSERT INTO users(id,firebase_uid,email,display_name,status,password_hash,email_verified_at) VALUES($1,'local:'||($1::uuid)::text,$2,$3,'active',$4,now()) RETURNING id", userID, email, name, passwordHash).Scan(&userID); err != nil {
 			return err
 		}
 		membershipID := ids.New()
@@ -68,6 +73,12 @@ func run() error {
 		}
 		if result.RowsAffected() != 1 {
 			return errors.New("super_admin reference role is missing; apply migrations first")
+		}
+		if _, err := tx.Exec(ctx, "INSERT INTO user_roles(user_id,role_id,assigned_by) SELECT $1,id,$1 FROM roles WHERE code='admin'", userID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, "INSERT INTO user_profiles(user_id,first_name) VALUES($1,$2)", userID, name); err != nil {
+			return err
 		}
 		fmt.Printf("created first super administrator %s in organization %s\n", userID, orgID)
 		return nil

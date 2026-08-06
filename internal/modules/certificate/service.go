@@ -5,19 +5,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
-	"github.com/Faysal9991/edtech_Backend/internal/data"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/clock"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/config"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/database"
-	platformid "github.com/Faysal9991/edtech_Backend/internal/platform/id"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/queue"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/storage"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/neoscoder/lms-service/internal/data"
+	"github.com/neoscoder/lms-service/internal/platform/clock"
+	"github.com/neoscoder/lms-service/internal/platform/config"
+	"github.com/neoscoder/lms-service/internal/platform/database"
+	platformid "github.com/neoscoder/lms-service/internal/platform/id"
+	"github.com/neoscoder/lms-service/internal/platform/queue"
+	"github.com/neoscoder/lms-service/internal/platform/storage"
 	"github.com/phpdave11/gofpdf"
 	"github.com/skip2/go-qrcode"
 )
@@ -87,10 +88,32 @@ func (s *Service) Evaluate(ctx context.Context, enrollmentID uuid.UUID) (*data.C
 		if total > 0 {
 			percentage = float64(done) / float64(total) * 100
 		}
-		if _, err = q.CreateCompletionSnapshot(ctx, data.CreateCompletionSnapshotParams{ID: s.ids.New(), EnrollmentID: enrollment.ID, RequiredLessons: int32(facts.RequiredLessons), CompletedLessons: int32(facts.CompletedLessons), RequiredQuizzes: int32(facts.RequiredQuizzes), PassedQuizzes: int32(facts.PassedQuizzes), RequiredAssignments: int32(facts.RequiredAssignments), PassedAssignments: int32(facts.PassedAssignments), Percentage: numeric(percentage), IsComplete: complete}); err != nil {
+		counts := []int64{facts.RequiredLessons, facts.CompletedLessons, facts.RequiredQuizzes, facts.PassedQuizzes, facts.RequiredAssignments, facts.PassedAssignments}
+		for _, count := range counts {
+			if count < 0 || count > math.MaxInt32 {
+				return errors.New("completion requirement count exceeds supported range")
+			}
+		}
+		// All database counts were range checked above before narrowing to int32.
+		if _, err = q.CreateCompletionSnapshot(ctx, data.CreateCompletionSnapshotParams{ID: s.ids.New(), EnrollmentID: enrollment.ID, RequiredLessons: int32(facts.RequiredLessons), CompletedLessons: int32(facts.CompletedLessons), RequiredQuizzes: int32(facts.RequiredQuizzes), PassedQuizzes: int32(facts.PassedQuizzes), RequiredAssignments: int32(facts.RequiredAssignments), PassedAssignments: int32(facts.PassedAssignments), Percentage: numeric(percentage), IsComplete: complete}); err != nil { // #nosec G115 -- checked against math.MaxInt32
 			return err
 		}
-		if !complete {
+		quizAverage, assignmentAverage, passingPercentage := 100.0, 100.0, 60.0
+		if err = tx.QueryRow(ctx, `SELECT
+			CASE WHEN $2::integer=0 THEN 100 ELSE COALESCE((SELECT avg(best.percentage) FROM (SELECT quiz_id,max(percentage) AS percentage FROM quiz_attempts WHERE enrollment_id=$1 AND status IN ('submitted','graded') GROUP BY quiz_id) best),0) END,
+			CASE WHEN $3::integer=0 THEN 100 ELSE COALESCE((SELECT avg(g.percentage) FROM grades g JOIN assignment_submissions sub ON sub.id=g.assignment_submission_id WHERE sub.enrollment_id=$1),0) END,
+			c.passing_percentage FROM enrollments e JOIN courses c ON c.id=e.course_id WHERE e.id=$1`, enrollment.ID, facts.RequiredQuizzes, facts.RequiredAssignments).Scan(&quizAverage, &assignmentAverage, &passingPercentage); err != nil {
+			return err
+		}
+		finalPercentage := (percentage + quizAverage + assignmentAverage) / 3
+		passed := complete && finalPercentage >= passingPercentage
+		components := []byte(fmt.Sprintf(`{"completion":%.2f,"quiz":%.2f,"assignment":%.2f}`, percentage, quizAverage, assignmentAverage))
+		if _, err = tx.Exec(ctx, `INSERT INTO course_results(id,enrollment_id,student_id,course_id,quiz_percentage,assignment_percentage,completion_percentage,final_percentage,passing_percentage,passed,components)
+			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+			ON CONFLICT(enrollment_id) DO UPDATE SET quiz_percentage=EXCLUDED.quiz_percentage,assignment_percentage=EXCLUDED.assignment_percentage,completion_percentage=EXCLUDED.completion_percentage,final_percentage=EXCLUDED.final_percentage,passing_percentage=EXCLUDED.passing_percentage,passed=EXCLUDED.passed,components=EXCLUDED.components,calculated_at=now(),updated_at=now()`, s.ids.New(), enrollment.ID, enrollment.StudentID, enrollment.CourseID, quizAverage, assignmentAverage, percentage, finalPercentage, passingPercentage, passed, components); err != nil {
+			return err
+		}
+		if !passed {
 			return nil
 		}
 		if _, err = q.SetEnrollmentStatus(ctx, data.SetEnrollmentStatusParams{ID: enrollment.ID, Status: "completed"}); err != nil {

@@ -64,6 +64,8 @@ type AuditLog struct {
 	BeforeData     []byte             `json:"before_data"`
 	AfterData      []byte             `json:"after_data"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	Metadata       []byte             `json:"metadata"`
+	UserAgent      string             `json:"user_agent"`
 }
 
 type Certificate struct {
@@ -114,6 +116,7 @@ type Course struct {
 	CreatedAt                pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt                pgtype.Timestamptz `json:"updated_at"`
 	SearchVector             interface{}        `json:"search_vector"`
+	PassingPercentage        pgtype.Numeric     `json:"passing_percentage"`
 }
 
 type CourseCategory struct {
@@ -157,6 +160,23 @@ type CourseModule struct {
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
+type CourseResult struct {
+	ID                   uuid.UUID          `json:"id"`
+	EnrollmentID         uuid.UUID          `json:"enrollment_id"`
+	StudentID            uuid.UUID          `json:"student_id"`
+	CourseID             uuid.UUID          `json:"course_id"`
+	QuizPercentage       pgtype.Numeric     `json:"quiz_percentage"`
+	AssignmentPercentage pgtype.Numeric     `json:"assignment_percentage"`
+	CompletionPercentage pgtype.Numeric     `json:"completion_percentage"`
+	FinalPercentage      pgtype.Numeric     `json:"final_percentage"`
+	PassingPercentage    pgtype.Numeric     `json:"passing_percentage"`
+	Passed               bool               `json:"passed"`
+	Components           []byte             `json:"components"`
+	CalculatedAt         pgtype.Timestamptz `json:"calculated_at"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
 type DeviceToken struct {
 	ID             uuid.UUID          `json:"id"`
 	UserID         uuid.UUID          `json:"user_id"`
@@ -165,6 +185,15 @@ type DeviceToken struct {
 	Platform       string             `json:"platform"`
 	LastSeenAt     pgtype.Timestamptz `json:"last_seen_at"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type EmailVerificationToken struct {
+	ID        uuid.UUID          `json:"id"`
+	UserID    uuid.UUID          `json:"user_id"`
+	TokenHash []byte             `json:"token_hash"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	UsedAt    pgtype.Timestamptz `json:"used_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type Enrollment struct {
@@ -387,6 +416,17 @@ type OutboxEvent struct {
 	PublishedAt      pgtype.Timestamptz `json:"published_at"`
 	LastError        pgtype.Text        `json:"last_error"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	DeadLetteredAt   pgtype.Timestamptz `json:"dead_lettered_at"`
+	ClaimedAt        pgtype.Timestamptz `json:"claimed_at"`
+}
+
+type PasswordResetToken struct {
+	ID        uuid.UUID          `json:"id"`
+	UserID    uuid.UUID          `json:"user_id"`
+	TokenHash []byte             `json:"token_hash"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	UsedAt    pgtype.Timestamptz `json:"used_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type PaymentTransaction struct {
@@ -496,6 +536,22 @@ type QuizQuestionOption struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
+type RefreshSession struct {
+	ID              uuid.UUID          `json:"id"`
+	FamilyID        uuid.UUID          `json:"family_id"`
+	ParentID        uuid.NullUUID      `json:"parent_id"`
+	UserID          uuid.UUID          `json:"user_id"`
+	TokenHash       []byte             `json:"token_hash"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	LastUsedAt      pgtype.Timestamptz `json:"last_used_at"`
+	RotatedAt       pgtype.Timestamptz `json:"rotated_at"`
+	RevokedAt       pgtype.Timestamptz `json:"revoked_at"`
+	ReuseDetectedAt pgtype.Timestamptz `json:"reuse_detected_at"`
+	IpAddress       *netip.Addr        `json:"ip_address"`
+	UserAgent       string             `json:"user_agent"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
 type Refund struct {
 	ID                   uuid.UUID          `json:"id"`
 	OrderID              uuid.UUID          `json:"order_id"`
@@ -521,6 +577,22 @@ type RolePermission struct {
 	PermissionID uuid.UUID `json:"permission_id"`
 }
 
+type StudentProfile struct {
+	UserID    uuid.UUID          `json:"user_id"`
+	Headline  string             `json:"headline"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type TeacherProfile struct {
+	UserID    uuid.UUID          `json:"user_id"`
+	Biography string             `json:"biography"`
+	Expertise []string           `json:"expertise"`
+	Status    string             `json:"status"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 type UploadIntent struct {
 	ID                     uuid.UUID          `json:"id"`
 	MediaAssetID           uuid.UUID          `json:"media_asset_id"`
@@ -535,15 +607,19 @@ type UploadIntent struct {
 }
 
 type User struct {
-	ID          uuid.UUID          `json:"id"`
-	FirebaseUid string             `json:"firebase_uid"`
-	Email       string             `json:"email"`
-	DisplayName string             `json:"display_name"`
-	AvatarUrl   pgtype.Text        `json:"avatar_url"`
-	Status      string             `json:"status"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	LastLoginAt pgtype.Timestamptz `json:"last_login_at"`
+	ID               uuid.UUID          `json:"id"`
+	FirebaseUid      string             `json:"firebase_uid"`
+	Email            string             `json:"email"`
+	DisplayName      string             `json:"display_name"`
+	AvatarUrl        pgtype.Text        `json:"avatar_url"`
+	Status           string             `json:"status"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	LastLoginAt      pgtype.Timestamptz `json:"last_login_at"`
+	PasswordHash     string             `json:"password_hash"`
+	EmailVerifiedAt  pgtype.Timestamptz `json:"email_verified_at"`
+	FailedLoginCount int32              `json:"failed_login_count"`
+	LockedUntil      pgtype.Timestamptz `json:"locked_until"`
 }
 
 type UserInvitation struct {
@@ -557,4 +633,22 @@ type UserInvitation struct {
 	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
 	AcceptedAt     pgtype.Timestamptz `json:"accepted_at"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type UserProfile struct {
+	UserID    uuid.UUID          `json:"user_id"`
+	FirstName string             `json:"first_name"`
+	LastName  string             `json:"last_name"`
+	Phone     pgtype.Text        `json:"phone"`
+	Timezone  string             `json:"timezone"`
+	Locale    string             `json:"locale"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type UserRole struct {
+	UserID     uuid.UUID          `json:"user_id"`
+	RoleID     uuid.UUID          `json:"role_id"`
+	AssignedBy uuid.NullUUID      `json:"assigned_by"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }

@@ -14,11 +14,13 @@ import (
 
 const claimOutboxEvents = `-- name: ClaimOutboxEvents :many
 WITH claimed AS (
- SELECT id FROM outbox_events WHERE status IN ('pending','failed') AND next_attempt_at<=now()
+ SELECT id FROM outbox_events
+ WHERE (status IN ('pending','failed') AND next_attempt_at<=now())
+    OR (status='processing' AND claimed_at<now()-interval '10 minutes')
  ORDER BY next_attempt_at,id FOR UPDATE SKIP LOCKED LIMIT $1
 )
-UPDATE outbox_events o SET status='processing',attempts=attempts+1
-FROM claimed WHERE o.id=claimed.id RETURNING o.id, o.aggregate_type, o.aggregate_id, o.event_type, o.payload, o.deduplication_key, o.status, o.attempts, o.next_attempt_at, o.published_at, o.last_error, o.created_at
+UPDATE outbox_events o SET status='processing',attempts=attempts+1,claimed_at=now()
+FROM claimed WHERE o.id=claimed.id RETURNING o.id, o.aggregate_type, o.aggregate_id, o.event_type, o.payload, o.deduplication_key, o.status, o.attempts, o.next_attempt_at, o.published_at, o.last_error, o.created_at, o.dead_lettered_at, o.claimed_at
 `
 
 func (q *Queries) ClaimOutboxEvents(ctx context.Context, limit int32) ([]OutboxEvent, error) {
@@ -43,6 +45,8 @@ func (q *Queries) ClaimOutboxEvents(ctx context.Context, limit int32) ([]OutboxE
 			&i.PublishedAt,
 			&i.LastError,
 			&i.CreatedAt,
+			&i.DeadLetteredAt,
+			&i.ClaimedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -455,6 +459,23 @@ func (q *Queries) RemoveDeviceToken(ctx context.Context, arg RemoveDeviceTokenPa
 	return result.RowsAffected(), nil
 }
 
+const removeDeviceTokenByHash = `-- name: RemoveDeviceTokenByHash :execrows
+DELETE FROM device_tokens WHERE token_hash=$1 AND user_id=$2
+`
+
+type RemoveDeviceTokenByHashParams struct {
+	TokenHash string    `json:"token_hash"`
+	UserID    uuid.UUID `json:"user_id"`
+}
+
+func (q *Queries) RemoveDeviceTokenByHash(ctx context.Context, arg RemoveDeviceTokenByHashParams) (int64, error) {
+	result, err := q.db.Exec(ctx, removeDeviceTokenByHash, arg.TokenHash, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const setNotificationDeliveryResult = `-- name: SetNotificationDeliveryResult :one
 UPDATE notification_deliveries SET status=$2,attempts=attempts+1,next_attempt_at=$3,provider_message_id=$4,last_error=$5,sent_at=CASE WHEN $2='sent' THEN now() ELSE sent_at END,updated_at=now() WHERE id=$1 RETURNING id, notification_id, device_token_id, status, attempts, next_attempt_at, provider_message_id, last_error, sent_at, created_at, updated_at
 `
@@ -492,8 +513,39 @@ func (q *Queries) SetNotificationDeliveryResult(ctx context.Context, arg SetNoti
 	return i, err
 }
 
+const setOutboxDeadLetter = `-- name: SetOutboxDeadLetter :one
+UPDATE outbox_events SET status='dead_letter',dead_lettered_at=now(),last_error=$2,claimed_at=NULL WHERE id=$1 RETURNING id, aggregate_type, aggregate_id, event_type, payload, deduplication_key, status, attempts, next_attempt_at, published_at, last_error, created_at, dead_lettered_at, claimed_at
+`
+
+type SetOutboxDeadLetterParams struct {
+	ID        uuid.UUID   `json:"id"`
+	LastError pgtype.Text `json:"last_error"`
+}
+
+func (q *Queries) SetOutboxDeadLetter(ctx context.Context, arg SetOutboxDeadLetterParams) (OutboxEvent, error) {
+	row := q.db.QueryRow(ctx, setOutboxDeadLetter, arg.ID, arg.LastError)
+	var i OutboxEvent
+	err := row.Scan(
+		&i.ID,
+		&i.AggregateType,
+		&i.AggregateID,
+		&i.EventType,
+		&i.Payload,
+		&i.DeduplicationKey,
+		&i.Status,
+		&i.Attempts,
+		&i.NextAttemptAt,
+		&i.PublishedAt,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.DeadLetteredAt,
+		&i.ClaimedAt,
+	)
+	return i, err
+}
+
 const setOutboxFailed = `-- name: SetOutboxFailed :one
-UPDATE outbox_events SET status='failed',next_attempt_at=$2,last_error=$3 WHERE id=$1 RETURNING id, aggregate_type, aggregate_id, event_type, payload, deduplication_key, status, attempts, next_attempt_at, published_at, last_error, created_at
+UPDATE outbox_events SET status='failed',next_attempt_at=$2,last_error=$3,claimed_at=NULL WHERE id=$1 RETURNING id, aggregate_type, aggregate_id, event_type, payload, deduplication_key, status, attempts, next_attempt_at, published_at, last_error, created_at, dead_lettered_at, claimed_at
 `
 
 type SetOutboxFailedParams struct {
@@ -518,12 +570,14 @@ func (q *Queries) SetOutboxFailed(ctx context.Context, arg SetOutboxFailedParams
 		&i.PublishedAt,
 		&i.LastError,
 		&i.CreatedAt,
+		&i.DeadLetteredAt,
+		&i.ClaimedAt,
 	)
 	return i, err
 }
 
 const setOutboxPublished = `-- name: SetOutboxPublished :one
-UPDATE outbox_events SET status='published',published_at=now(),last_error=NULL WHERE id=$1 RETURNING id, aggregate_type, aggregate_id, event_type, payload, deduplication_key, status, attempts, next_attempt_at, published_at, last_error, created_at
+UPDATE outbox_events SET status='published',published_at=now(),last_error=NULL,claimed_at=NULL WHERE id=$1 RETURNING id, aggregate_type, aggregate_id, event_type, payload, deduplication_key, status, attempts, next_attempt_at, published_at, last_error, created_at, dead_lettered_at, claimed_at
 `
 
 func (q *Queries) SetOutboxPublished(ctx context.Context, id uuid.UUID) (OutboxEvent, error) {
@@ -542,6 +596,8 @@ func (q *Queries) SetOutboxPublished(ctx context.Context, id uuid.UUID) (OutboxE
 		&i.PublishedAt,
 		&i.LastError,
 		&i.CreatedAt,
+		&i.DeadLetteredAt,
+		&i.ClaimedAt,
 	)
 	return i, err
 }

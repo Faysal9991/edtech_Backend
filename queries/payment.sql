@@ -41,6 +41,16 @@ SELECT p.* FROM payment_transactions p JOIN orders o ON o.id=p.order_id WHERE o.
  AND (sqlc.narg(cursor_created_at)::timestamptz IS NULL OR (p.created_at,p.id)<(sqlc.narg(cursor_created_at),sqlc.narg(cursor_id)::uuid))
 ORDER BY p.created_at DESC,p.id DESC LIMIT sqlc.arg(page_size);
 
+-- name: ListAdminPaymentOrders :many
+SELECT o.*, u.email, u.display_name
+FROM orders o JOIN users u ON u.id=o.user_id
+WHERE o.organization_id=sqlc.arg(organization_id)
+  AND (sqlc.narg(status)::text IS NULL OR o.status=sqlc.narg(status))
+  AND (sqlc.narg(from_time)::timestamptz IS NULL OR o.created_at>=sqlc.narg(from_time))
+  AND (sqlc.narg(to_time)::timestamptz IS NULL OR o.created_at<sqlc.narg(to_time))
+  AND (sqlc.narg(cursor_created_at)::timestamptz IS NULL OR (o.created_at,o.id)<(sqlc.narg(cursor_created_at),sqlc.narg(cursor_id)::uuid))
+ORDER BY o.created_at DESC,o.id DESC LIMIT sqlc.arg(page_size);
+
 -- name: GetSuccessfulPaymentForOrder :one
 SELECT * FROM payment_transactions WHERE order_id=$1 AND kind='payment' AND status='succeeded' ORDER BY created_at DESC LIMIT 1;
 

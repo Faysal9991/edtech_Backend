@@ -211,11 +211,16 @@ func (q *Queries) LiveAttendanceReport(ctx context.Context, arg LiveAttendanceRe
 
 const organizationOverview = `-- name: OrganizationOverview :one
 SELECT
- (SELECT count(DISTINCT m.user_id) FROM organization_memberships m JOIN membership_roles mr ON mr.membership_id=m.id JOIN roles r ON r.id=mr.role_id WHERE m.organization_id=$1 AND m.status='active' AND r.code='student') AS total_students,
- (SELECT count(DISTINCT m.user_id) FROM organization_memberships m JOIN membership_roles mr ON mr.membership_id=m.id JOIN roles r ON r.id=mr.role_id WHERE m.organization_id=$1 AND m.status='active' AND r.code='instructor') AS total_instructors,
+ (SELECT count(DISTINCT m.user_id) FROM organization_memberships m JOIN membership_roles mr ON mr.membership_id=m.id JOIN roles r ON r.id=mr.role_id JOIN users u ON u.id=m.user_id WHERE m.organization_id=$1 AND m.status='active' AND u.status='active' AND r.code='student') AS total_students,
+ (SELECT count(DISTINCT m.user_id) FROM organization_memberships m JOIN membership_roles mr ON mr.membership_id=m.id JOIN roles r ON r.id=mr.role_id JOIN users u ON u.id=m.user_id WHERE m.organization_id=$1 AND m.status='active' AND u.status='active' AND r.code='instructor') AS total_instructors,
  (SELECT count(*) FROM courses c WHERE c.organization_id=$1 AND c.status='published') AS published_courses,
+ (SELECT count(*) FROM enrollments e WHERE e.organization_id=$1) AS total_enrollments,
  (SELECT count(*) FROM enrollments e WHERE e.organization_id=$1 AND e.status='active') AS active_enrollments,
  (SELECT count(*) FROM enrollments e WHERE e.organization_id=$1 AND e.status='completed') AS completed_enrollments,
+ (SELECT count(*) FROM orders o WHERE o.organization_id=$1 AND o.status IN ('pending','processing','requires_action') AND o.created_at>=$2 AND o.created_at<$3) AS pending_payments,
+ (SELECT count(*) FROM orders o WHERE o.organization_id=$1 AND o.status='paid' AND o.created_at>=$2 AND o.created_at<$3) AS paid_payments,
+ (SELECT count(*) FROM orders o WHERE o.organization_id=$1 AND o.status='failed' AND o.created_at>=$2 AND o.created_at<$3) AS failed_payments,
+ (SELECT count(*) FROM orders o WHERE o.organization_id=$1 AND o.status='refunded' AND o.created_at>=$2 AND o.created_at<$3) AS refunded_payments,
  (SELECT COALESCE(sum(o.amount_minor),0)::bigint FROM orders o WHERE o.organization_id=$1 AND o.status IN ('paid','refunded') AND o.created_at>=$2 AND o.created_at<$3) AS gross_revenue_minor,
  (SELECT COALESCE(sum(r.amount_minor),0)::bigint FROM refunds r JOIN orders o ON o.id=r.order_id WHERE o.organization_id=$1 AND r.status='succeeded' AND r.created_at>=$2 AND r.created_at<$3) AS refund_amount_minor
 `
@@ -230,8 +235,13 @@ type OrganizationOverviewRow struct {
 	TotalStudents        int64 `json:"total_students"`
 	TotalInstructors     int64 `json:"total_instructors"`
 	PublishedCourses     int64 `json:"published_courses"`
+	TotalEnrollments     int64 `json:"total_enrollments"`
 	ActiveEnrollments    int64 `json:"active_enrollments"`
 	CompletedEnrollments int64 `json:"completed_enrollments"`
+	PendingPayments      int64 `json:"pending_payments"`
+	PaidPayments         int64 `json:"paid_payments"`
+	FailedPayments       int64 `json:"failed_payments"`
+	RefundedPayments     int64 `json:"refunded_payments"`
 	GrossRevenueMinor    int64 `json:"gross_revenue_minor"`
 	RefundAmountMinor    int64 `json:"refund_amount_minor"`
 }
@@ -243,8 +253,13 @@ func (q *Queries) OrganizationOverview(ctx context.Context, arg OrganizationOver
 		&i.TotalStudents,
 		&i.TotalInstructors,
 		&i.PublishedCourses,
+		&i.TotalEnrollments,
 		&i.ActiveEnrollments,
 		&i.CompletedEnrollments,
+		&i.PendingPayments,
+		&i.PaidPayments,
+		&i.FailedPayments,
+		&i.RefundedPayments,
 		&i.GrossRevenueMinor,
 		&i.RefundAmountMinor,
 	)
@@ -354,4 +369,91 @@ func (q *Queries) RevenueTrend(ctx context.Context, arg RevenueTrendParams) ([]R
 		return nil, err
 	}
 	return items, nil
+}
+
+const teacherOverview = `-- name: TeacherOverview :one
+SELECT
+ count(DISTINCT c.id) AS total_courses,
+ count(DISTINCT c.id) FILTER (WHERE c.status='published') AS published_courses,
+ count(DISTINCT e.student_id) AS total_students,
+ count(e.id) FILTER (WHERE e.status='active') AS active_enrollments,
+ count(e.id) FILTER (WHERE e.status='completed') AS completed_enrollments,
+ COALESCE(round(avg(e.completion_percentage),2),0)::numeric AS average_completion_percentage,
+ COALESCE((SELECT round(avg(qa.percentage),2)
+   FROM quiz_attempts qa
+   JOIN quizzes q ON q.id=qa.quiz_id
+   JOIN course_instructors qci ON qci.course_id=q.course_id
+   JOIN courses qc ON qc.id=q.course_id
+   WHERE qci.instructor_id=$1
+     AND qc.organization_id=$2
+     AND qa.status='graded'
+     AND qa.submitted_at>=$3
+     AND qa.submitted_at<$4),0)::numeric AS average_quiz_percentage,
+ (SELECT count(*)
+   FROM assignment_submissions sub
+   JOIN assignments a ON a.id=sub.assignment_id
+   JOIN course_instructors aci ON aci.course_id=a.course_id
+   JOIN courses ac ON ac.id=a.course_id
+   WHERE aci.instructor_id=$1
+     AND ac.organization_id=$2
+     AND sub.submitted_at>=$3
+     AND sub.submitted_at<$4) AS assignment_submissions,
+ (SELECT count(g.id)
+   FROM grades g
+   JOIN assignment_submissions sub ON sub.id=g.assignment_submission_id
+   JOIN assignments a ON a.id=sub.assignment_id
+   JOIN course_instructors aci ON aci.course_id=a.course_id
+   JOIN courses ac ON ac.id=a.course_id
+   WHERE aci.instructor_id=$1
+     AND ac.organization_id=$2
+     AND sub.submitted_at>=$3
+     AND sub.submitted_at<$4) AS graded_assignments
+FROM course_instructors ci
+JOIN courses c ON c.id=ci.course_id
+LEFT JOIN enrollments e ON e.course_id=c.id
+ AND e.created_at>=$3
+ AND e.created_at<$4
+WHERE ci.instructor_id=$1
+  AND c.organization_id=$2
+`
+
+type TeacherOverviewParams struct {
+	InstructorID   uuid.UUID          `json:"instructor_id"`
+	OrganizationID uuid.UUID          `json:"organization_id"`
+	FromTime       pgtype.Timestamptz `json:"from_time"`
+	ToTime         pgtype.Timestamptz `json:"to_time"`
+}
+
+type TeacherOverviewRow struct {
+	TotalCourses                int64          `json:"total_courses"`
+	PublishedCourses            int64          `json:"published_courses"`
+	TotalStudents               int64          `json:"total_students"`
+	ActiveEnrollments           int64          `json:"active_enrollments"`
+	CompletedEnrollments        int64          `json:"completed_enrollments"`
+	AverageCompletionPercentage pgtype.Numeric `json:"average_completion_percentage"`
+	AverageQuizPercentage       pgtype.Numeric `json:"average_quiz_percentage"`
+	AssignmentSubmissions       int64          `json:"assignment_submissions"`
+	GradedAssignments           int64          `json:"graded_assignments"`
+}
+
+func (q *Queries) TeacherOverview(ctx context.Context, arg TeacherOverviewParams) (TeacherOverviewRow, error) {
+	row := q.db.QueryRow(ctx, teacherOverview,
+		arg.InstructorID,
+		arg.OrganizationID,
+		arg.FromTime,
+		arg.ToTime,
+	)
+	var i TeacherOverviewRow
+	err := row.Scan(
+		&i.TotalCourses,
+		&i.PublishedCourses,
+		&i.TotalStudents,
+		&i.ActiveEnrollments,
+		&i.CompletedEnrollments,
+		&i.AverageCompletionPercentage,
+		&i.AverageQuizPercentage,
+		&i.AssignmentSubmissions,
+		&i.GradedAssignments,
+	)
+	return i, err
 }

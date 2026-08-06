@@ -1,120 +1,151 @@
-# Phase 1 LMS backend
+# LMS Service
 
-Production-oriented Go modular monolith for a multi-organization learning management system. Firebase supplies identity; PostgreSQL remains authoritative for users, memberships, roles, courses, learning state, grades, orders, and reports.
+Phase-1 learning-management backend implemented as a production-oriented Go modular monolith. It exposes a Gin REST API under `/api/v1`, runs durable background work through Asynq/Redis, and keeps PostgreSQL as the system of record.
 
-## Stack
+## Architecture
 
-- Go 1.26, `net/http`, Chi, structured `slog`
-- PostgreSQL 16, pgx/v5, sqlc, Goose
-- Redis and Asynq for rate limits, idempotent background jobs, and the transactional outbox
-- private S3-compatible storage (MinIO locally), signed upload/download URLs, FFmpeg media processing
-- Firebase Admin for ID-token verification and FCM
-- Stripe PaymentIntents and signed webhooks
-- LiveKit participant tokens and signed webhooks
-- OpenAPI 3.1 with oapi-codegen models
-- Prometheus metrics and OpenTelemetry traces
+The commands in `cmd/` are composition roots. Business behavior is grouped into identity/users, courses/content/media, enrollment/progress, quizzes/assignments, live classes, payments, notifications, results/certificates, reports, and audit modules. Module services own authorization and state transitions; HTTP handlers validate/translate; `internal/platform` supplies pgx, Redis, JWT, storage, Stripe/mock payment, FCM/log notification, LiveKit, jobs, logging, metrics, and tracing adapters.
 
-## Quick start with Docker
+Important invariants are database-enforced: UUIDv7 primary keys, unique active enrollment/progress/submission/certificate/provider-event keys, ordered content positions, check-constrained states, integer minor-unit money, `timestamptz`, row locks for state transitions, and an outbox written in the same transaction as important events. See [implementation plan](docs/IMPLEMENTATION_PLAN.md), [architecture](docs/architecture.md), and [index map](docs/DATABASE_INDEXES.md).
 
-Docker Compose does not run migrations implicitly. Run them exactly once before starting application replicas.
+## Prerequisites
+
+- Go 1.26.5+
+- Docker Engine with Compose v2
+- `make` and `rg` for the development targets
+- Optional local PostgreSQL client tools for backup/restore
+
+Pinned generators and verification tools are installed by `make tools`.
+
+## Environment configuration
+
+Copy `.env.example` to `.env` for non-Compose development and replace every placeholder. The application validates configuration at startup. Production rejects the mock payment provider, development JWT keys, missing storage/LiveKit credentials, short signing/encryption keys, and unsafe Argon2/token lifetimes.
+
+The most important required values are `DATABASE_URL`, `REDIS_URL`, `JWT_SIGNING_KEY`, private S3 settings, `DEVICE_TOKEN_ENCRYPTION_KEY`, and provider selections. Do not commit `.env`, Firebase credentials, private keys, or exported data.
+
+## Local startup
+
+The exact local startup sequence is:
 
 ```bash
-make docker-up
+docker compose up -d postgres redis minio minio-init
+docker compose --profile tools run --rm migrate up
 docker compose --profile tools run --rm seed
-make smoke-test
+docker compose up -d api worker
+docker compose ps
+curl -fsS http://localhost:8080/health/ready
 ```
 
-Services are exposed at API `:8080`, PostgreSQL `:5432`, Redis `:6379`, MinIO `:9000`, and MinIO Console `:9001`.
+The shorter equivalent is `make compose-up`; that target applies migrations and runs the safe, idempotent development seed before starting the API and worker. API is on `http://localhost:8080`; Swagger UI is `http://localhost:8080/docs`; the OpenAPI document is `/openapi.yaml`; Prometheus metrics are `/metrics`; MinIO console is `http://localhost:9001`.
 
-The checked-in Compose values are local-only. Copy `.env.example` for non-Compose development and replace every placeholder. Never commit `.env` or Firebase service-account files.
+Compose credentials are local-only and intentionally visible in `docker-compose.yml`. They must never be copied to a deployed environment.
 
-## Run without Docker
+## Administrator seeding
 
-Start PostgreSQL, Redis, and an S3-compatible service, export configuration, then:
+The development/test seed is idempotent and refuses to run in production. It reads credentials from the environment, hashes passwords with Argon2id, verifies the seeded email, assigns global and organization roles, and does not print passwords.
+
+```bash
+export APP_ENV=development
+export DATABASE_URL='postgres://lms:lms@localhost:5432/lms?sslmode=disable'
+export SEED_ADMIN_EMAIL='admin@lms.local'
+export SEED_ADMIN_DISPLAY_NAME='Development Administrator'
+export SEED_ADMIN_PASSWORD='use-a-long-unique-local-password'
+export SEED_DEMO_PASSWORD='use-another-long-demo-password'
+make seed
+```
+
+For the first administrator in an otherwise empty environment, use `cmd/bootstrap-admin` with `BOOTSTRAP_ADMIN_CONFIRM=CREATE_FIRST_SUPER_ADMIN`, `BOOTSTRAP_EMAIL`, `BOOTSTRAP_PASSWORD`, display name, organization name, and organization slug. It refuses to create a second active super administrator.
+
+## Default development flow
+
+1. `make bootstrap` and edit `.env`.
+2. `make compose-up` (migrations and the development seed run automatically).
+3. Register through `POST /api/v1/auth/register`; development/test responses include the one-use verification token so local work requires no email credential.
+4. Verify, log in, and pass `Authorization: Bearer <access-token>`. Access JWTs are short-lived. Store the refresh token only in a secure client facility and rotate it through `/auth/refresh`.
+5. Use `Idempotency-Key` for payment-order creation. Free enrollment is idempotent through the database-enforced `(course_id, student_id)` uniqueness invariant. Use the server-issued upload key only through media intent/completion APIs.
+6. Run `make test` while developing and `make verify` before handoff.
+
+## Database migrations
+
+Migrations are canonical single files with explicit Up/Down sections. The migration command executes them with `golang-migrate`, while the format remains directly readable by sqlc and existing tooling.
 
 ```bash
 make migrate-up
-make seed
-make run-worker
-make run-api
+make migrate-down                 # one safe step
+make migrate-create NAME=add_feature
+go run ./cmd/migrate status
 ```
 
-Development identity tokens use `dev:<email>` only when both `APP_ENV=development|test` and `FAKE_AUTH_ENABLED=true`:
+Application replicas never run migrations implicitly. Deploy the one-shot migration command before API/worker rollout.
+
+## Generation and tests
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/auth/bootstrap \
-  -H 'Authorization: Bearer dev:student1@acme.test'
-
-curl http://localhost:8080/api/v1/courses \
-  -H 'Authorization: Bearer dev:student1@acme.test'
+make generate
+make format
+make vet
+make lint
+make test
+make test-race
+make test-integration
+make security
+make smoke
+make verify
 ```
 
-Organization-scoped staff operations also require `X-Organization-ID`. The value is never trusted by itself; authorization middleware resolves an active membership and current PostgreSQL roles for every request.
+Integration tests use Testcontainers PostgreSQL when `TEST_DATABASE_URL` is absent. Set it to reuse a development server; each test creates an isolated schema. The smoke test exercises authentication, course/enrollment/progress, assessments, LiveKit-token authorization, mock payment, completion, and certificate verification.
 
-## Flutter and Firebase
+## Payment providers
 
-1. Sign in using the FlutterFire Authentication SDK.
-2. Retrieve a fresh Firebase ID token.
-3. Send `Authorization: Bearer <firebase-id-token>` to `/api/v1/auth/bootstrap`.
-4. Keep the returned local UUID and memberships as display state only; the server re-evaluates roles from PostgreSQL.
-5. Refresh the Firebase token normally. Do not send a Firebase password to this backend.
+`PAYMENT_PROVIDER=mock` is for development/tests. It uses the same signed, idempotent webhook path and never activates a paid enrollment from a client response. `PAYMENT_PROVIDER=stripe` uses the official Stripe Go SDK; set `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`. Amount and currency are checked against the locked server order before the transaction marks payment paid, activates enrollment, and inserts its outbox event. Provider event IDs are unique.
 
-Production uses Application Default Credentials. `GOOGLE_APPLICATION_CREDENTIALS` may point to a local credentials file, which must remain outside the repository.
+## Private media: S3 and MinIO
 
-## Development users
+Set `S3_ENDPOINT`, region, bucket, access key, secret key, and path-style behavior. The bucket must remain private. Clients request a bounded upload intent, upload through a short-lived presigned URL, and complete using the intent ID. The service validates owner, storage key, expected MIME/extension/size/checksum and actual object metadata. Download/stream URLs are issued only after ownership/enrollment/teaching authorization and are never logged.
 
-The idempotent seed creates:
+Local Compose creates the private `lms-private` MinIO bucket. Production can use any compatible private S3 service.
 
-- `super@lms.local`
-- `admin@acme.test`
-- `instructor1@acme.test`, `instructor2@acme.test`
-- `student1@acme.test` through `student4@acme.test`
+## LiveKit
 
-It also creates one organization, free and paid courses, content, assessments, a live session, enrollments, progress, and notifications.
+Set `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET`. Tokens are short-lived and room-scoped. Course teachers receive publish/subscribe grants; active enrolled students receive subscribe-only grants. LiveKit webhooks record join/leave attendance idempotently. Tests inject the local provider and require no hosted LiveKit account.
 
-## Commands
+## Notifications and Firebase
 
-```text
-make tools                 install pinned generators/migration tool
-make generate              regenerate sqlc and OpenAPI models
-make fmt                   format Go code
-make lint                  run go vet and staticcheck
-make test                  unit and handler tests
-make test-integration      Testcontainers PostgreSQL tests
-make test-race             race detector
-make migrate-up            apply all pending migrations
-make migrate-down-one      roll back exactly one migration
-make seed                   idempotent development fixtures
-make run-api               API process
-make run-worker            Asynq/outbox worker
-make docker-up             dependencies, explicit migration, API, worker
-make docker-down           stop Compose without deleting volumes
-make smoke-test            seeded student flow through certificate verification
+`NOTIFICATION_PROVIDER=log` is the local adapter; it records in-app notifications and delivery state without external credentials. `NOTIFICATION_PROVIDER=fcm` initializes Firebase Admin using Application Default Credentials and `FIREBASE_PROJECT_ID`. Put `GOOGLE_APPLICATION_CREDENTIALS` outside the repository. Push failure never rolls back the business transaction: outbox jobs retry exponentially and enter `dead_letter` after the bounded attempt budget.
+
+## Deployment on Ubuntu
+
+1. Install Docker/Compose and provision managed or host PostgreSQL, Redis, and private S3 storage.
+2. Create a root-readable `.env.production` outside source control with TLS-enabled database/Redis URLs and randomly generated keys.
+3. Review [production Compose](deploy/docker-compose.production.yml) and [Nginx example](deploy/nginx.conf); replace hostname/certificate paths.
+4. Back up the database, run the one-shot `migrate` service, then roll out API and worker.
+5. Require `/health/ready` before traffic, scrape `/metrics` privately, and forward JSON logs/traces.
+
+Both images are multi-stage and run as UID 10001. The worker image alone includes FFmpeg. Graceful shutdown stops HTTP/Asynq and closes PostgreSQL, Redis, jobs, and tracing resources.
+
+## Backup and restore
+
+```bash
+DATABASE_URL='postgres://...' ./scripts/backup-postgres.sh /secure/backups
+DATABASE_URL='postgres://...' RESTORE_CONFIRM=RESTORE_LMS_DATABASE \
+  ./scripts/restore-postgres.sh /secure/backups/lms-YYYYMMDDTHHMMSSZ.dump
 ```
 
-The smoke flow also creates a paid-course order, replays a signed fake Stripe success webhook, verifies idempotent activation, and exercises certificate PDF upload/download against private object storage.
+Encrypt backups, test restores regularly, restrict retention access, and restore to a disposable environment before a production recovery. See [deployment runbook](docs/deployment.md).
 
-## API conventions
+## Security notes
 
-- JSON requests reject unknown fields and bodies larger than 1 MiB.
-- Errors use `application/problem+json` and include the propagated request ID.
-- Lists use opaque timestamp-plus-UUID cursors, never unbounded offsets.
-- Amounts are integer minor units, for example `10000 BDT`.
-- `Idempotency-Key` is mandatory for order creation and retryable purchase flows.
-- Raw Stripe and LiveKit webhook bodies/signatures are verified before state changes.
-- Large files upload directly to private object storage with short-lived signed URLs.
+- Passwords use configurable Argon2id PHC hashes. Access JWTs validate algorithm, key ID, issuer, audience, type, lifetime, and subject.
+- Opaque refresh, verification, and reset tokens have at least 256 bits of entropy; PostgreSQL stores only SHA-256 hashes. Refresh rotation revokes the entire family on reuse.
+- Redis backs global and authentication-specific rate limits. Security routes fail closed if the limiter is unavailable; ordinary traffic degrades safely.
+- RBAC is database-authoritative on every request. Resource services additionally enforce ownership, enrollment, course organization, immutable submissions/attempts, and provider-verified payments.
+- Logs exclude authorization headers, passwords, tokens, provider secrets, Firebase keys, sensitive bodies, and presigned credentials. Audit metadata is allowlisted.
 
-The contract is [api/openapi.yaml](api/openapi.yaml). Architecture and integration details are under [docs](docs/architecture.md).
+## Troubleshooting
 
-## Production first administrator
-
-Apply migrations, create the Firebase user in the trusted Firebase project, and run the one-shot bootstrap command described in [authentication](docs/authentication.md). The command accepts a Firebase UID and email, refuses to run if a super administrator already exists, and never handles a password.
-
-## Health and telemetry
-
-- `/health/live` checks only process liveness.
-- `/health/ready` checks PostgreSQL and Redis with a short timeout.
-- `/metrics` exposes Prometheus-compatible request and process metrics.
-- Set `OTEL_EXPORTER_OTLP_ENDPOINT` to enable batched OTLP/HTTP tracing.
-
-See [deployment](docs/deployment.md) and the [runbook](docs/runbook.md) before operating the service.
+- `health/live` succeeds but `health/ready` fails: check PostgreSQL/Redis DNS, TLS, credentials, pool exhaustion, then `docker compose logs api`.
+- Login returns account pending: consume the one-use verification token first. Five invalid passwords temporarily lock the account.
+- `default organization is unavailable`: run migrations and `make seed`, or make `DEFAULT_ORGANIZATION_SLUG` match an active organization.
+- Upload completion fails: compare intent MIME, byte size, checksum, expiry, owner, and the object metadata in MinIO/S3.
+- Paid enrollment remains pending: inspect signed webhook delivery and the unique `payment_webhook_events` record; never force activation from a client PaymentIntent status.
+- Worker backlog grows: inspect Redis, `outbox_events` retry/dead-letter state, Asynq queues, provider health, and worker memory/FFmpeg limits.

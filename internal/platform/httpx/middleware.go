@@ -37,7 +37,11 @@ func SecureHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+		if r.URL.Path == "/docs" {
+			w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src https://unpkg.com 'unsafe-inline'; style-src https://unpkg.com 'unsafe-inline'; img-src data:; connect-src 'self'; frame-ancestors 'none'")
+		} else {
+			w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -81,9 +85,18 @@ func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
 			started := time.Now()
 			rec := &responseRecorder{ResponseWriter: w, status: http.StatusOK}
 			next.ServeHTTP(rec, r)
-			logger.InfoContext(r.Context(), "http request", "request_id", RequestID(r.Context()), "method", r.Method, "path", r.URL.Path, "status", rec.status, "duration_ms", time.Since(started).Milliseconds(), "remote_addr", r.RemoteAddr)
+			logger.InfoContext(r.Context(), "http request", "request_id", RequestID(r.Context()), "method", r.Method, "path", safeLogPath(r.URL.Path), "status", rec.status, "duration_ms", time.Since(started).Milliseconds(), "remote_addr", r.RemoteAddr)
 		})
 	}
+}
+
+func safeLogPath(path string) string {
+	// The device-removal endpoint carries the provider token as a path segment
+	// for API compatibility. Never write that secret token to access logs.
+	if strings.HasPrefix(path, "/api/v1/devices/") {
+		return "/api/v1/devices/:token"
+	}
+	return path
 }
 
 func Recover(logger *slog.Logger) func(http.Handler) http.Handler {
@@ -104,6 +117,20 @@ var requestDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: 
 var requestTotal = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "lms_http_requests_total", Help: "HTTP requests."}, []string{"method", "route", "status"})
 
 func RegisterMetrics(reg prometheus.Registerer) { reg.MustRegister(requestDuration, requestTotal) }
+
+// ObserveMetrics records one request using a normalized router pattern rather
+// than the raw URL, preventing unbounded labels from path identifiers.
+func ObserveMetrics(method, route string, status int, duration time.Duration) {
+	if route == "" {
+		route = "unknown"
+	}
+	statusText := http.StatusText(status)
+	if statusText == "" {
+		statusText = "unknown"
+	}
+	requestTotal.WithLabelValues(method, route, statusText).Inc()
+	requestDuration.WithLabelValues(method, route, statusText).Observe(duration.Seconds())
+}
 
 func Metrics(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -9,16 +9,20 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Faysal9991/edtech_Backend/internal/platform/config"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/database"
-	platformid "github.com/Faysal9991/edtech_Backend/internal/platform/id"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/neoscoder/lms-service/internal/platform/auth"
+	"github.com/neoscoder/lms-service/internal/platform/config"
+	"github.com/neoscoder/lms-service/internal/platform/database"
+	platformid "github.com/neoscoder/lms-service/internal/platform/id"
 )
 
 type seeder struct {
-	tx  pgx.Tx
-	ids platformid.Secure
+	tx      pgx.Tx
+	ids     platformid.Secure
+	hasher  *auth.PasswordHasher
+	orgName string
+	orgSlug string
 }
 
 func main() {
@@ -35,6 +39,14 @@ func run() error {
 	if environment != "development" && environment != "test" {
 		return errors.New("development seed is allowed only when APP_ENV is development or test")
 	}
+	adminEmail := strings.ToLower(strings.TrimSpace(os.Getenv("SEED_ADMIN_EMAIL")))
+	adminName := strings.TrimSpace(os.Getenv("SEED_ADMIN_DISPLAY_NAME"))
+	adminPassword := os.Getenv("SEED_ADMIN_PASSWORD")
+	demoPassword := os.Getenv("SEED_DEMO_PASSWORD")
+	if !strings.Contains(adminEmail, "@") || adminName == "" || len(adminPassword) < 12 || len(demoPassword) < 12 {
+		return errors.New("SEED_ADMIN_EMAIL, SEED_ADMIN_DISPLAY_NAME, SEED_ADMIN_PASSWORD, and SEED_DEMO_PASSWORD (12+ characters) are required")
+	}
+	hasher := auth.NewPasswordHasher(config.Password{MemoryKiB: 64 * 1024, Iterations: 3, Parallelism: 2, SaltBytes: 16, KeyBytes: 32})
 	databaseConfig, err := config.LoadDatabase()
 	if err != nil {
 		return err
@@ -46,15 +58,15 @@ func run() error {
 	}
 	defer pool.Close()
 	return database.WithinTx(ctx, pool, func(tx pgx.Tx) error {
-		s := &seeder{tx: tx}
+		s := &seeder{tx: tx, hasher: hasher, orgName: value("SEED_ORGANIZATION_NAME", "LMS Development"), orgSlug: value("DEFAULT_ORGANIZATION_SLUG", "lms")}
 		orgID, err := s.organization(ctx)
 		if err != nil {
 			return err
 		}
 		users := map[string]uuid.UUID{}
-		specs := []struct{ email, name, role string }{{"super@lms.local", "Platform Super Admin", "super_admin"}, {"admin@acme.test", "Acme Organization Admin", "organization_admin"}, {"instructor1@acme.test", "Amina Instructor", "instructor"}, {"instructor2@acme.test", "Rahim Instructor", "instructor"}, {"student1@acme.test", "Nadia Student", "student"}, {"student2@acme.test", "Sakib Student", "student"}, {"student3@acme.test", "Maya Student", "student"}, {"student4@acme.test", "Tanvir Student", "student"}}
+		specs := []struct{ email, name, role, password string }{{adminEmail, adminName, "super_admin", adminPassword}, {"instructor1@acme.test", "Amina Instructor", "instructor", demoPassword}, {"instructor2@acme.test", "Rahim Instructor", "instructor", demoPassword}, {"student1@acme.test", "Nadia Student", "student", demoPassword}, {"student2@acme.test", "Sakib Student", "student", demoPassword}, {"student3@acme.test", "Maya Student", "student", demoPassword}, {"student4@acme.test", "Tanvir Student", "student", demoPassword}}
 		for _, spec := range specs {
-			id, err := s.user(ctx, orgID, spec.email, spec.name, spec.role)
+			id, err := s.user(ctx, orgID, spec.email, spec.name, spec.role, spec.password)
 			if err != nil {
 				return err
 			}
@@ -64,11 +76,11 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		freeID, freeLesson, err := s.course(ctx, orgID, categoryID, users["admin@acme.test"], users["instructor1@acme.test"], "Production Go Foundations", "production-go-foundations", true, 0)
+		freeID, freeLesson, err := s.course(ctx, orgID, categoryID, users[adminEmail], users["instructor1@acme.test"], "Production Go Foundations", "production-go-foundations", true, 0)
 		if err != nil {
 			return err
 		}
-		paidID, _, err := s.course(ctx, orgID, categoryID, users["admin@acme.test"], users["instructor2@acme.test"], "Advanced Go Systems", "advanced-go-systems", false, 100000)
+		paidID, _, err := s.course(ctx, orgID, categoryID, users[adminEmail], users["instructor2@acme.test"], "Advanced Go Systems", "advanced-go-systems", false, 100000)
 		if err != nil {
 			return err
 		}
@@ -86,30 +98,56 @@ func run() error {
 		if err := s.enrollment(ctx, orgID, paidID, uuid.Nil, users["student4@acme.test"], false); err != nil {
 			return err
 		}
-		fmt.Println("seed complete; development tokens use Authorization: Bearer dev:<email>, for example dev:student1@acme.test")
+		fmt.Printf("seed complete; administrator email: %s (password read from SEED_ADMIN_PASSWORD)\n", adminEmail)
 		return nil
 	})
 }
 func (s *seeder) organization(ctx context.Context) (uuid.UUID, error) {
 	id := s.ids.New()
-	err := s.tx.QueryRow(ctx, "INSERT INTO organizations(id,name,slug) VALUES($1,'Acme Learning','acme-learning') ON CONFLICT(slug) DO UPDATE SET name=EXCLUDED.name,updated_at=now() RETURNING id", id).Scan(&id)
+	err := s.tx.QueryRow(ctx, "INSERT INTO organizations(id,name,slug) VALUES($1,$2,$3) ON CONFLICT(slug) DO UPDATE SET name=EXCLUDED.name,updated_at=now() RETURNING id", id, s.orgName, s.orgSlug).Scan(&id)
 	return id, err
 }
 func devUID(email string) string {
 	sum := sha256.Sum256([]byte(strings.ToLower(email)))
 	return "dev-" + hex.EncodeToString(sum[:16])
 }
-func (s *seeder) user(ctx context.Context, orgID uuid.UUID, email, name, role string) (uuid.UUID, error) {
+func (s *seeder) user(ctx context.Context, orgID uuid.UUID, email, name, role, password string) (uuid.UUID, error) {
 	userID := s.ids.New()
-	if err := s.tx.QueryRow(ctx, "INSERT INTO users(id,firebase_uid,email,display_name,status) VALUES($1,$2,$3,$4,'active') ON CONFLICT(firebase_uid) DO UPDATE SET email=EXCLUDED.email,display_name=EXCLUDED.display_name,status='active',updated_at=now() RETURNING id", userID, devUID(email), email, name).Scan(&userID); err != nil {
+	passwordHash, err := s.hasher.Hash(password)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if err := s.tx.QueryRow(ctx, "INSERT INTO users(id,firebase_uid,email,display_name,status,password_hash,email_verified_at) VALUES($1,$2,$3,$4,'active',$5,now()) ON CONFLICT(firebase_uid) DO UPDATE SET email=EXCLUDED.email,display_name=EXCLUDED.display_name,status='active',password_hash=EXCLUDED.password_hash,email_verified_at=COALESCE(users.email_verified_at,now()),updated_at=now() RETURNING id", userID, devUID(email), email, name, passwordHash).Scan(&userID); err != nil {
 		return uuid.Nil, err
 	}
 	membershipID := s.ids.New()
 	if err := s.tx.QueryRow(ctx, "INSERT INTO organization_memberships(id,organization_id,user_id,status,joined_at) VALUES($1,$2,$3,'active',now()) ON CONFLICT(organization_id,user_id) DO UPDATE SET status='active',updated_at=now() RETURNING id", membershipID, orgID, userID).Scan(&membershipID); err != nil {
 		return uuid.Nil, err
 	}
-	_, err := s.tx.Exec(ctx, "INSERT INTO membership_roles(membership_id,role_id) SELECT $1,id FROM roles WHERE code=$2 ON CONFLICT DO NOTHING", membershipID, role)
+	if _, err := s.tx.Exec(ctx, "INSERT INTO membership_roles(membership_id,role_id) SELECT $1,id FROM roles WHERE code=$2 ON CONFLICT DO NOTHING", membershipID, role); err != nil {
+		return uuid.Nil, err
+	}
+	globalRole := map[string]string{"super_admin": "admin", "organization_admin": "admin", "instructor": "teacher", "student": "student"}[role]
+	if _, err := s.tx.Exec(ctx, "INSERT INTO user_roles(user_id,role_id) SELECT $1,id FROM roles WHERE code=$2 ON CONFLICT DO NOTHING", userID, globalRole); err != nil {
+		return uuid.Nil, err
+	}
+	if _, err := s.tx.Exec(ctx, "INSERT INTO user_profiles(user_id,first_name) VALUES($1,$2) ON CONFLICT(user_id) DO UPDATE SET first_name=EXCLUDED.first_name,updated_at=now()", userID, name); err != nil {
+		return uuid.Nil, err
+	}
+	switch globalRole {
+	case "teacher":
+		_, err = s.tx.Exec(ctx, "INSERT INTO teacher_profiles(user_id,status) VALUES($1,'approved') ON CONFLICT(user_id) DO UPDATE SET status='approved',updated_at=now()", userID)
+	case "student":
+		_, err = s.tx.Exec(ctx, "INSERT INTO student_profiles(user_id) VALUES($1) ON CONFLICT DO NOTHING", userID)
+	}
 	return userID, err
+}
+
+func value(key, fallback string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return fallback
 }
 func (s *seeder) category(ctx context.Context, orgID uuid.UUID, name, slug string) (uuid.UUID, error) {
 	id := s.ids.New()
@@ -200,6 +238,9 @@ func (s *seeder) enrollment(ctx context.Context, orgID, courseID, lessonID, stud
 		if err != nil {
 			return err
 		}
+	}
+	if status != "active" {
+		return nil
 	}
 	_, err := s.tx.Exec(ctx, "INSERT INTO notifications(id,user_id,organization_id,type,title,body,deduplication_key) VALUES($1,$2,$3,'enrollment.activated','Welcome to your course','Your seed enrollment is ready.',$4) ON CONFLICT(user_id,deduplication_key) WHERE deduplication_key IS NOT NULL DO NOTHING", s.ids.New(), studentID, orgID, "seed-enrollment-"+courseID.String())
 	return err

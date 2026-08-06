@@ -2,40 +2,37 @@
 
 ## Release order
 
-1. Build immutable API, worker, and migration images from the same revision.
+1. Build immutable API, worker, and migration images from one revision.
 2. Back up PostgreSQL and verify restore readiness.
-3. Run `service up` from the migration image as a single controlled job.
+3. Run the migration image as one controlled job.
 4. Deploy worker, then API replicas.
-5. Wait for `/health/ready`, inspect queue failures, and run authenticated smoke checks.
+5. Require `/health/ready`, inspect queues/outbox, and run the authenticated smoke journey.
 
-API and worker processes never apply schema changes automatically. Down migrations are present for development rollback, but production rollbacks should normally deploy forward-compatible corrective migrations.
+API and worker processes never apply schema changes. Down migrations support local validation; production rollbacks should normally use a forward-compatible corrective migration.
 
-## Required production secrets
+## Required production configuration
 
-- `DATABASE_URL`, Redis password where configured
-- S3 access/secret keys
-- Firebase ADC workload identity or mounted credentials
-- LiveKit API key/secret
+- TLS PostgreSQL and Redis connection details
+- randomly generated JWT signing and device-token encryption keys
+- private S3 credentials plus internal and client-visible endpoints when they differ
+- LiveKit URL and API credentials
 - Stripe secret and webhook secret
-- device-token encryption key
+- Firebase ADC/workload identity only when `NOTIFICATION_PROVIDER=fcm`
 
-Keep secrets in the deployment platform secret manager, not images, Compose files, logs, Git, or Terraform output. Use a private S3 bucket with public access blocked and lifecycle rules for abandoned upload keys.
+Production validation rejects mock payment, missing required credentials, development key markers, weak token lifetimes, and unsafe Argon2 parameters. Store secrets outside Git, images, Compose files, logs, and infrastructure outputs.
 
-## Sizing
+## Operations
 
-Set `DB_MAX_CONNS` so all API and worker replicas stay below the database connection budget. Begin with API CPU-based autoscaling, a modest worker concurrency, and Redis persistence. Monitor HTTP latency, pool acquisition, outbox age, job retries, payment failures, and notification failures.
+Keep the aggregate API/worker pool size below PostgreSQL’s connection budget. Start with bounded worker concurrency and Redis persistence. Monitor HTTP latency/status, database pool acquisition, outbox age/dead letters, queue retries, payment failures, and notification failures.
 
-## Backups
-
-Use managed PostgreSQL point-in-time recovery plus daily logical verification. Test restoration into an isolated environment. Version object-storage buckets or enable provider replication for certificate and course media. Redis is not authoritative; queues can be reconstructed from pending database state/outbox records.
+Use `scripts/backup-postgres.sh` for encrypted-at-rest logical backup workflows and `scripts/restore-postgres.sh` with its explicit confirmation guard. Test restores in isolation. Redis is not authoritative; pending database/outbox state can reconstruct work.
 
 ## External verification checklist
 
-- Firebase: revoked and disabled user tokens fail.
-- Stripe: CLI/test-mode signed success, failure, duplicate, and refund webhooks.
-- LiveKit: real participant token permissions and signed join/leave webhooks.
-- S3: signed PUT, HEAD verification, private signed download, and range request.
-- FCM: one Android and one iOS device, invalid-token cleanup, and retry behavior.
-- OTLP: traces arrive with API/worker service names and no sensitive attributes.
+- Stripe test-mode success, failure, replay, and refund webhooks
+- LiveKit publisher/subscriber grants and signed attendance webhooks
+- S3 signed PUT, HEAD verification, private download, and range requests
+- FCM Android/iOS delivery, invalid-token cleanup, retry, and dead letter
+- OTLP export with no sensitive attributes
 
-The repository contains no real integration credentials, so these checks must run in the target environment.
+Local completion does not require these credentials: mock payment, log notification, local MinIO, and locally signed LiveKit tokens cover the automated path.

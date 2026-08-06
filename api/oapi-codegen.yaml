@@ -2,3 +2,5 @@ package: api
 generate:
   models: true
 output: internal/api/types.gen.go
+output-options:
+  skip-prune: true

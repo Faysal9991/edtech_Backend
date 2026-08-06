@@ -7,24 +7,29 @@ import (
 
 func validConfig() Config {
 	return Config{
-		App:          App{Environment: "test"},
-		HTTP:         HTTP{Port: 8080, ReadTimeout: time.Second, WriteTimeout: time.Second, IdleTimeout: time.Second, ShutdownTimeout: time.Second},
-		Database:     Database{URL: "postgres://test", MaxConns: 1, QueryTimeout: time.Second},
-		Storage:      Storage{Endpoint: "http://storage", Bucket: "test", SignedURLTTL: time.Minute},
-		Upload:       Upload{MaxVideoBytes: 1, MaxPDFBytes: 1, MaxImageBytes: 1},
-		RateLimit:    RateLimit{Requests: 1, Window: time.Second},
-		Notification: Notification{EncryptionKey: "12345678901234567890123456789012"},
+		App:           App{Environment: "test"},
+		HTTP:          HTTP{Port: 8080, ReadTimeout: time.Second, WriteTimeout: time.Second, IdleTimeout: time.Second, ShutdownTimeout: time.Second},
+		Database:      Database{URL: "postgres://test", MaxConns: 1, QueryTimeout: time.Second},
+		Auth:          Auth{Issuer: "test", Audience: "clients", KeyID: "v1", SigningKey: "01234567890123456789012345678901", AccessTTL: 15 * time.Minute, RefreshTTL: time.Hour, VerificationTTL: time.Hour, PasswordResetTTL: time.Minute},
+		Password:      Password{MemoryKiB: 19 * 1024, Iterations: 2, Parallelism: 1, SaltBytes: 16, KeyBytes: 32},
+		Storage:       Storage{Endpoint: "http://storage", PublicEndpoint: "http://storage", Bucket: "test", AccessKey: "access", SecretKey: "0123456789012345", SignedURLTTL: time.Minute},
+		Upload:        Upload{MaxVideoBytes: 1, MaxPDFBytes: 1, MaxImageBytes: 1},
+		RateLimit:     RateLimit{Requests: 1, Window: time.Second},
+		Payment:       Payment{Provider: "mock"},
+		Stripe:        Stripe{WebhookSecret: "0123456789012345"},
+		LiveKit:       LiveKit{URL: "ws://livekit", APIKey: "key", APISecret: "0123456789012345"},
+		Notification:  Notification{Provider: "log", EncryptionKey: "12345678901234567890123456789012"},
+		Observability: Observability{LogLevel: "info"},
+		Worker:        Worker{Concurrency: 1},
 	}
 }
 
-func TestProductionRejectsFakeAuth(t *testing.T) {
-	t.Setenv("APP_ENV", "production")
-	t.Setenv("FAKE_AUTH_ENABLED", "true")
-	t.Setenv("DATABASE_URL", "postgres://example")
-	t.Setenv("S3_ENDPOINT", "http://s3")
-	t.Setenv("S3_BUCKET", "bucket")
-	if _, err := Load(); err == nil {
-		t.Fatal("expected production fake auth to be rejected")
+func TestProductionRejectsMockPaymentAndDevelopmentJWTKey(t *testing.T) {
+	cfg := validConfig()
+	cfg.App.Environment = "production"
+	cfg.Auth.SigningKey = "local-only-change-me-01234567890123456789"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected production development settings to be rejected")
 	}
 }
 

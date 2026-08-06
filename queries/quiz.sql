@@ -45,6 +45,19 @@ WHERE q.quiz_id=$1 ORDER BY q.position,q.id,o.position,o.id;
 -- name: NextQuizAttemptNumber :one
 SELECT COALESCE(max(attempt_number),0)::integer+1 FROM quiz_attempts WHERE quiz_id=$1 AND student_id=$2;
 
+-- name: ExpireStudentQuizAttempts :execrows
+UPDATE quiz_attempts
+SET status='expired',updated_at=now()
+WHERE quiz_id=sqlc.arg(quiz_id) AND student_id=sqlc.arg(student_id)
+  AND status='in_progress' AND expires_at IS NOT NULL
+  AND expires_at<=sqlc.arg(expired_at);
+
+-- name: ExpireQuizAttempt :one
+UPDATE quiz_attempts
+SET status='expired',updated_at=now()
+WHERE id=sqlc.arg(id) AND status='in_progress'
+RETURNING *;
+
 -- name: CreateQuizAttempt :one
 INSERT INTO quiz_attempts (id,quiz_id,enrollment_id,student_id,attempt_number,question_snapshot,question_order,started_at,expires_at,max_points)
 VALUES (sqlc.arg(id),sqlc.arg(quiz_id),sqlc.arg(enrollment_id),sqlc.arg(student_id),sqlc.arg(attempt_number),sqlc.arg(question_snapshot),sqlc.arg(question_order),sqlc.arg(started_at),sqlc.narg(expires_at),sqlc.arg(max_points)) RETURNING *;

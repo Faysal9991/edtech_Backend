@@ -5,24 +5,23 @@ import (
 	"errors"
 	"net/http"
 
-	api "github.com/Faysal9991/edtech_Backend/internal/api"
-	"github.com/Faysal9991/edtech_Backend/internal/data"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/auth"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/httpx"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	api "github.com/neoscoder/lms-service/internal/api"
+	"github.com/neoscoder/lms-service/internal/data"
+	"github.com/neoscoder/lms-service/internal/platform/auth"
+	"github.com/neoscoder/lms-service/internal/platform/httpx"
 )
 
 type Handler struct {
-	s        *Service
-	q        *data.Queries
-	verifier auth.TokenVerifier
+	s *Service
+	q *data.Queries
 }
 
-func NewHandler(s *Service, q *data.Queries, v auth.TokenVerifier) *Handler {
-	return &Handler{s: s, q: q, verifier: v}
+func NewHandler(s *Service, q *data.Queries) *Handler {
+	return &Handler{s: s, q: q}
 }
 func principal(r *http.Request) (auth.Principal, bool)   { return auth.PrincipalFrom(r.Context()) }
 func membership(r *http.Request) (auth.Membership, bool) { return auth.MembershipFrom(r.Context()) }
@@ -43,19 +42,6 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.JSON(w, 200, user)
 }
-func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
-	p, ok := principal(r)
-	if !ok {
-		httpx.Problem(w, r, 401, "Unauthorized", "authentication context is missing")
-		return
-	}
-	if err := h.verifier.RevokeSessions(r.Context(), p.FirebaseUID); err != nil {
-		httpx.Problem(w, r, 502, "Identity Provider Error", "unable to revoke Firebase sessions")
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	var in api.OrganizationWrite
 	if err := httpx.DecodeJSON(w, r, &in); err != nil {

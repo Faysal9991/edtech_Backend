@@ -9,6 +9,51 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AuthUserRoles.
+const (
+	AuthUserRolesAdmin   AuthUserRoles = "admin"
+	AuthUserRolesStudent AuthUserRoles = "student"
+	AuthUserRolesTeacher AuthUserRoles = "teacher"
+)
+
+// Valid indicates whether the value is a known member of the AuthUserRoles enum.
+func (e AuthUserRoles) Valid() bool {
+	switch e {
+	case AuthUserRolesAdmin:
+		return true
+	case AuthUserRolesStudent:
+		return true
+	case AuthUserRolesTeacher:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AuthUserStatus.
+const (
+	AuthUserStatusActive    AuthUserStatus = "active"
+	AuthUserStatusDisabled  AuthUserStatus = "disabled"
+	AuthUserStatusPending   AuthUserStatus = "pending"
+	AuthUserStatusSuspended AuthUserStatus = "suspended"
+)
+
+// Valid indicates whether the value is a known member of the AuthUserStatus enum.
+func (e AuthUserStatus) Valid() bool {
+	switch e {
+	case AuthUserStatusActive:
+		return true
+	case AuthUserStatusDisabled:
+		return true
+	case AuthUserStatusPending:
+		return true
+	case AuthUserStatusSuspended:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CourseLevel.
 const (
 	CourseLevelAdvanced     CourseLevel = "advanced"
@@ -309,21 +354,54 @@ func (e QuizWriteResultsVisibility) Valid() bool {
 	}
 }
 
+// Defines values for RoleWriteRoles.
+const (
+	RoleWriteRolesAdmin   RoleWriteRoles = "admin"
+	RoleWriteRolesStudent RoleWriteRoles = "student"
+	RoleWriteRolesTeacher RoleWriteRoles = "teacher"
+)
+
+// Valid indicates whether the value is a known member of the RoleWriteRoles enum.
+func (e RoleWriteRoles) Valid() bool {
+	switch e {
+	case RoleWriteRolesAdmin:
+		return true
+	case RoleWriteRolesStudent:
+		return true
+	case RoleWriteRolesTeacher:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TokenPairTokenType.
+const (
+	Bearer TokenPairTokenType = "Bearer"
+)
+
+// Valid indicates whether the value is a known member of the TokenPairTokenType enum.
+func (e TokenPairTokenType) Valid() bool {
+	switch e {
+	case Bearer:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UploadIntentWriteKind.
 const (
-	UploadIntentWriteKindAssignment  UploadIntentWriteKind = "assignment"
-	UploadIntentWriteKindCertificate UploadIntentWriteKind = "certificate"
-	UploadIntentWriteKindImage       UploadIntentWriteKind = "image"
-	UploadIntentWriteKindPdf         UploadIntentWriteKind = "pdf"
-	UploadIntentWriteKindVideo       UploadIntentWriteKind = "video"
+	UploadIntentWriteKindAssignment UploadIntentWriteKind = "assignment"
+	UploadIntentWriteKindImage      UploadIntentWriteKind = "image"
+	UploadIntentWriteKindPdf        UploadIntentWriteKind = "pdf"
+	UploadIntentWriteKindVideo      UploadIntentWriteKind = "video"
 )
 
 // Valid indicates whether the value is a known member of the UploadIntentWriteKind enum.
 func (e UploadIntentWriteKind) Valid() bool {
 	switch e {
 	case UploadIntentWriteKindAssignment:
-		return true
-	case UploadIntentWriteKindCertificate:
 		return true
 	case UploadIntentWriteKindImage:
 		return true
@@ -339,7 +417,8 @@ func (e UploadIntentWriteKind) Valid() bool {
 // Defines values for UserStatus.
 const (
 	UserStatusActive    UserStatus = "active"
-	UserStatusDeleted   UserStatus = "deleted"
+	UserStatusDisabled  UserStatus = "disabled"
+	UserStatusPending   UserStatus = "pending"
 	UserStatusSuspended UserStatus = "suspended"
 )
 
@@ -348,7 +427,9 @@ func (e UserStatus) Valid() bool {
 	switch e {
 	case UserStatusActive:
 		return true
-	case UserStatusDeleted:
+	case UserStatusDisabled:
+		return true
+	case UserStatusPending:
 		return true
 	case UserStatusSuspended:
 		return true
@@ -357,42 +438,135 @@ func (e UserStatus) Valid() bool {
 	}
 }
 
-// Defines values for UpdateAssignmentParamsStatus.
+// Defines values for UserStatusWriteStatus.
 const (
-	UpdateAssignmentParamsStatusArchived  UpdateAssignmentParamsStatus = "archived"
-	UpdateAssignmentParamsStatusDraft     UpdateAssignmentParamsStatus = "draft"
-	UpdateAssignmentParamsStatusPublished UpdateAssignmentParamsStatus = "published"
+	UserStatusWriteStatusActive    UserStatusWriteStatus = "active"
+	UserStatusWriteStatusDisabled  UserStatusWriteStatus = "disabled"
+	UserStatusWriteStatusPending   UserStatusWriteStatus = "pending"
+	UserStatusWriteStatusSuspended UserStatusWriteStatus = "suspended"
 )
 
-// Valid indicates whether the value is a known member of the UpdateAssignmentParamsStatus enum.
-func (e UpdateAssignmentParamsStatus) Valid() bool {
+// Valid indicates whether the value is a known member of the UserStatusWriteStatus enum.
+func (e UserStatusWriteStatus) Valid() bool {
 	switch e {
-	case UpdateAssignmentParamsStatusArchived:
+	case UserStatusWriteStatusActive:
 		return true
-	case UpdateAssignmentParamsStatusDraft:
+	case UserStatusWriteStatusDisabled:
 		return true
-	case UpdateAssignmentParamsStatusPublished:
+	case UserStatusWriteStatusPending:
+		return true
+	case UserStatusWriteStatusSuspended:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for UpdateQuizParamsStatus.
+// Defines values for AdminListUsersParamsStatus.
 const (
-	UpdateQuizParamsStatusArchived  UpdateQuizParamsStatus = "archived"
-	UpdateQuizParamsStatusDraft     UpdateQuizParamsStatus = "draft"
-	UpdateQuizParamsStatusPublished UpdateQuizParamsStatus = "published"
+	AdminListUsersParamsStatusActive    AdminListUsersParamsStatus = "active"
+	AdminListUsersParamsStatusDisabled  AdminListUsersParamsStatus = "disabled"
+	AdminListUsersParamsStatusPending   AdminListUsersParamsStatus = "pending"
+	AdminListUsersParamsStatusSuspended AdminListUsersParamsStatus = "suspended"
 )
 
-// Valid indicates whether the value is a known member of the UpdateQuizParamsStatus enum.
-func (e UpdateQuizParamsStatus) Valid() bool {
+// Valid indicates whether the value is a known member of the AdminListUsersParamsStatus enum.
+func (e AdminListUsersParamsStatus) Valid() bool {
 	switch e {
-	case UpdateQuizParamsStatusArchived:
+	case AdminListUsersParamsStatusActive:
 		return true
-	case UpdateQuizParamsStatusDraft:
+	case AdminListUsersParamsStatusDisabled:
 		return true
-	case UpdateQuizParamsStatusPublished:
+	case AdminListUsersParamsStatusPending:
+		return true
+	case AdminListUsersParamsStatusSuspended:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminListUsersParamsRole.
+const (
+	AdminListUsersParamsRoleAdmin   AdminListUsersParamsRole = "admin"
+	AdminListUsersParamsRoleStudent AdminListUsersParamsRole = "student"
+	AdminListUsersParamsRoleTeacher AdminListUsersParamsRole = "teacher"
+)
+
+// Valid indicates whether the value is a known member of the AdminListUsersParamsRole enum.
+func (e AdminListUsersParamsRole) Valid() bool {
+	switch e {
+	case AdminListUsersParamsRoleAdmin:
+		return true
+	case AdminListUsersParamsRoleStudent:
+		return true
+	case AdminListUsersParamsRoleTeacher:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListCoursesParamsLevel.
+const (
+	ListCoursesParamsLevelAdvanced     ListCoursesParamsLevel = "advanced"
+	ListCoursesParamsLevelAll          ListCoursesParamsLevel = "all"
+	ListCoursesParamsLevelBeginner     ListCoursesParamsLevel = "beginner"
+	ListCoursesParamsLevelIntermediate ListCoursesParamsLevel = "intermediate"
+)
+
+// Valid indicates whether the value is a known member of the ListCoursesParamsLevel enum.
+func (e ListCoursesParamsLevel) Valid() bool {
+	switch e {
+	case ListCoursesParamsLevelAdvanced:
+		return true
+	case ListCoursesParamsLevelAll:
+		return true
+	case ListCoursesParamsLevelBeginner:
+		return true
+	case ListCoursesParamsLevelIntermediate:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TeacherUpdateAssignmentParamsStatus.
+const (
+	TeacherUpdateAssignmentParamsStatusArchived  TeacherUpdateAssignmentParamsStatus = "archived"
+	TeacherUpdateAssignmentParamsStatusDraft     TeacherUpdateAssignmentParamsStatus = "draft"
+	TeacherUpdateAssignmentParamsStatusPublished TeacherUpdateAssignmentParamsStatus = "published"
+)
+
+// Valid indicates whether the value is a known member of the TeacherUpdateAssignmentParamsStatus enum.
+func (e TeacherUpdateAssignmentParamsStatus) Valid() bool {
+	switch e {
+	case TeacherUpdateAssignmentParamsStatusArchived:
+		return true
+	case TeacherUpdateAssignmentParamsStatusDraft:
+		return true
+	case TeacherUpdateAssignmentParamsStatusPublished:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TeacherUpdateQuizParamsStatus.
+const (
+	TeacherUpdateQuizParamsStatusArchived  TeacherUpdateQuizParamsStatus = "archived"
+	TeacherUpdateQuizParamsStatusDraft     TeacherUpdateQuizParamsStatus = "draft"
+	TeacherUpdateQuizParamsStatusPublished TeacherUpdateQuizParamsStatus = "published"
+)
+
+// Valid indicates whether the value is a known member of the TeacherUpdateQuizParamsStatus enum.
+func (e TeacherUpdateQuizParamsStatus) Valid() bool {
+	switch e {
+	case TeacherUpdateQuizParamsStatusArchived:
+		return true
+	case TeacherUpdateQuizParamsStatusDraft:
+		return true
+	case TeacherUpdateQuizParamsStatusPublished:
 		return true
 	default:
 		return false
@@ -421,13 +595,21 @@ type AssignmentWrite struct {
 	Title              string     `json:"title"`
 }
 
-// Category defines model for Category.
-type Category struct {
-	Description *string `json:"description,omitempty"`
-	Id          UUID    `json:"id"`
-	Name        string  `json:"name"`
-	Slug        string  `json:"slug"`
+// AuthUser defines model for AuthUser.
+type AuthUser struct {
+	DisplayName     string              `json:"display_name"`
+	Email           openapi_types.Email `json:"email"`
+	EmailVerifiedAt *Timestamp          `json:"email_verified_at,omitempty"`
+	Id              UUID                `json:"id"`
+	Roles           []AuthUserRoles     `json:"roles"`
+	Status          AuthUserStatus      `json:"status"`
 }
+
+// AuthUserRoles defines model for AuthUser.Roles.
+type AuthUserRoles string
+
+// AuthUserStatus defines model for AuthUser.Status.
+type AuthUserStatus string
 
 // CategoryWrite defines model for CategoryWrite.
 type CategoryWrite struct {
@@ -444,6 +626,12 @@ type CertificateVerification struct {
 	OrganizationName  string    `json:"organization_name"`
 	StudentName       string    `json:"student_name"`
 	Valid             bool      `json:"valid"`
+}
+
+// ChangePasswordRequest defines model for ChangePasswordRequest.
+type ChangePasswordRequest struct {
+	CurrentPassword *string `json:"current_password,omitempty"`
+	NewPassword     *string `json:"new_password,omitempty"`
 }
 
 // Course defines model for Course.
@@ -490,7 +678,9 @@ type CourseWriteLevel string
 // DeviceTokenWrite defines model for DeviceTokenWrite.
 type DeviceTokenWrite struct {
 	Platform DeviceTokenWritePlatform `json:"platform"`
-	Token    string                   `json:"token"`
+
+	// Token Sensitive push-provider token; stored encrypted and never logged.
+	Token string `json:"token"`
 }
 
 // DeviceTokenWritePlatform defines model for DeviceTokenWrite.Platform.
@@ -514,6 +704,11 @@ type FieldError struct {
 	Message string `json:"message"`
 }
 
+// ForgotPasswordRequest defines model for ForgotPasswordRequest.
+type ForgotPasswordRequest struct {
+	Email openapi_types.Email `json:"email"`
+}
+
 // GradeWrite defines model for GradeWrite.
 type GradeWrite struct {
 	Feedback   *string `json:"feedback,omitempty"`
@@ -524,17 +719,6 @@ type GradeWrite struct {
 // InstructorAssignment defines model for InstructorAssignment.
 type InstructorAssignment struct {
 	InstructorId UUID `json:"instructor_id"`
-}
-
-// Invitation defines model for Invitation.
-type Invitation struct {
-	Email     string    `json:"email"`
-	ExpiresAt Timestamp `json:"expires_at"`
-	Id        UUID      `json:"id"`
-	Role      string    `json:"role"`
-
-	// Token Returned only once to the authorized inviter.
-	Token *string `json:"token,omitempty"`
 }
 
 // InvitationAccept defines model for InvitationAccept.
@@ -554,8 +738,10 @@ type InvitationWriteRole string
 // JoinToken defines model for JoinToken.
 type JoinToken struct {
 	ExpiresAt Timestamp `json:"expires_at"`
-	Token     string    `json:"token"`
-	Url       string    `json:"url"`
+
+	// Token Sensitive short-lived room token; never log it.
+	Token string `json:"token"`
+	Url   string `json:"url"`
 }
 
 // LessonWrite defines model for LessonWrite.
@@ -588,6 +774,12 @@ type LiveSessionWrite struct {
 	ScheduledEndAt   Timestamp `json:"scheduled_end_at"`
 	ScheduledStartAt Timestamp `json:"scheduled_start_at"`
 	Title            string    `json:"title"`
+}
+
+// LoginRequest defines model for LoginRequest.
+type LoginRequest struct {
+	Email    openapi_types.Email `json:"email"`
+	Password *string             `json:"password,omitempty"`
 }
 
 // Membership defines model for Membership.
@@ -633,21 +825,14 @@ type Order struct {
 	AmountMinor int64  `json:"amount_minor"`
 	Currency    string `json:"currency"`
 	Id          UUID   `json:"id"`
-	Status      string `json:"status"`
+
+	// Status pending, requires_action, paid, failed, cancelled, or refunded
+	Status string `json:"status"`
 }
 
 // OrderWrite defines model for OrderWrite.
 type OrderWrite struct {
 	CourseId UUID `json:"course_id"`
-}
-
-// Organization defines model for Organization.
-type Organization struct {
-	CreatedAt Timestamp `json:"created_at"`
-	Id        UUID      `json:"id"`
-	Name      string    `json:"name"`
-	Slug      string    `json:"slug"`
-	Status    string    `json:"status"`
 }
 
 // OrganizationWrite defines model for OrganizationWrite.
@@ -658,7 +843,7 @@ type OrganizationWrite struct {
 
 // PaymentIntent defines model for PaymentIntent.
 type PaymentIntent struct {
-	// ClientSecret Sensitive ephemeral value; never logged.
+	// ClientSecret Sensitive ephemeral provider value; never log it.
 	ClientSecret string `json:"client_secret"`
 }
 
@@ -671,6 +856,18 @@ type Problem struct {
 	Status    int           `json:"status"`
 	Title     string        `json:"title"`
 	Type      string        `json:"type"`
+}
+
+// ProfileWrite defines model for ProfileWrite.
+type ProfileWrite struct {
+	Biography   *string   `json:"biography,omitempty"`
+	DisplayName string    `json:"display_name"`
+	Expertise   *[]string `json:"expertise,omitempty"`
+	FirstName   *string   `json:"first_name,omitempty"`
+	LastName    *string   `json:"last_name,omitempty"`
+	Locale      *string   `json:"locale,omitempty"`
+	Phone       *string   `json:"phone,omitempty"`
+	Timezone    *string   `json:"timezone,omitempty"`
 }
 
 // Progress defines model for Progress.
@@ -737,6 +934,36 @@ type QuizWrite struct {
 // QuizWriteResultsVisibility defines model for QuizWrite.ResultsVisibility.
 type QuizWriteResultsVisibility string
 
+// RegisterRequest defines model for RegisterRequest.
+type RegisterRequest struct {
+	DisplayName string              `json:"display_name"`
+	Email       openapi_types.Email `json:"email"`
+	Password    *string             `json:"password,omitempty"`
+}
+
+// RegistrationResponse defines model for RegistrationResponse.
+type RegistrationResponse struct {
+	Message string   `json:"message"`
+	User    AuthUser `json:"user"`
+
+	// VerificationToken Development/test only.
+	VerificationToken *string `json:"verification_token,omitempty"`
+}
+
+// ResetPasswordRequest defines model for ResetPasswordRequest.
+type ResetPasswordRequest struct {
+	NewPassword *string `json:"new_password,omitempty"`
+	Token       *string `json:"token,omitempty"`
+}
+
+// RoleWrite defines model for RoleWrite.
+type RoleWrite struct {
+	Roles []RoleWriteRoles `json:"roles"`
+}
+
+// RoleWriteRoles defines model for RoleWrite.Roles.
+type RoleWriteRoles string
+
 // SubmissionWrite defines model for SubmissionWrite.
 type SubmissionWrite struct {
 	MediaAssetIds *[]UUID `json:"media_asset_ids,omitempty"`
@@ -745,6 +972,22 @@ type SubmissionWrite struct {
 
 // Timestamp defines model for Timestamp.
 type Timestamp = time.Time
+
+// TokenPair defines model for TokenPair.
+type TokenPair struct {
+	AccessToken  *string            `json:"access_token,omitempty"`
+	ExpiresAt    Timestamp          `json:"expires_at"`
+	RefreshToken *string            `json:"refresh_token,omitempty"`
+	TokenType    TokenPairTokenType `json:"token_type"`
+}
+
+// TokenPairTokenType defines model for TokenPair.TokenType.
+type TokenPairTokenType string
+
+// TokenRequest defines model for TokenRequest.
+type TokenRequest struct {
+	Token *string `json:"token,omitempty"`
+}
 
 // UUID defines model for UUID.
 type UUID = openapi_types.UUID
@@ -781,14 +1024,22 @@ type User struct {
 // UserStatus defines model for User.Status.
 type UserStatus string
 
+// UserStatusWrite defines model for UserStatusWrite.
+type UserStatusWrite struct {
+	Status UserStatusWriteStatus `json:"status"`
+}
+
+// UserStatusWriteStatus defines model for UserStatusWrite.Status.
+type UserStatusWriteStatus string
+
+// CourseID defines model for CourseID.
+type CourseID = openapi_types.UUID
+
 // Cursor defines model for Cursor.
 type Cursor = string
 
 // ID defines model for ID.
 type ID = openapi_types.UUID
-
-// IDQuery defines model for IDQuery.
-type IDQuery = openapi_types.UUID
 
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
@@ -802,335 +1053,294 @@ type ReportFrom = time.Time
 // ReportTo defines model for ReportTo.
 type ReportTo = time.Time
 
+// Slug defines model for Slug.
+type Slug = string
+
 // List defines model for List.
 type List = ListResponse
 
 // OK defines model for OK.
 type OK map[string]interface{}
 
-// GradeAssignmentParams defines parameters for GradeAssignment.
-type GradeAssignmentParams struct {
-	ReturnForResubmission *bool `form:"return_for_resubmission,omitempty" json:"return_for_resubmission,omitempty"`
+// Tokens defines model for Tokens.
+type Tokens = TokenPair
+
+// RefreshToken defines model for RefreshToken.
+type RefreshToken struct {
+	RefreshToken *string `json:"refresh_token,omitempty"`
 }
 
-// ListAssignmentsParams defines parameters for ListAssignments.
-type ListAssignmentsParams struct {
-	CourseId openapi_types.UUID `form:"course_id" json:"course_id"`
-
-	// Cursor Opaque base64 cursor containing the stable timestamp and UUID tie-breaker.
-	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+// AdminListEnrollmentsParams defines parameters for AdminListEnrollments.
+type AdminListEnrollmentsParams struct {
+	// Cursor Opaque timestamp and UUID tie-breaker.
+	Cursor    *Cursor             `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit     *Limit              `form:"limit,omitempty" json:"limit,omitempty"`
+	Status    *string             `form:"status,omitempty" json:"status,omitempty"`
+	CourseId  *openapi_types.UUID `form:"course_id,omitempty" json:"course_id,omitempty"`
+	StudentId *openapi_types.UUID `form:"student_id,omitempty" json:"student_id,omitempty"`
 }
 
-// UpdateAssignmentParams defines parameters for UpdateAssignment.
-type UpdateAssignmentParams struct {
-	Status *UpdateAssignmentParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+// AdminPaymentHistoryParams defines parameters for AdminPaymentHistory.
+type AdminPaymentHistoryParams struct {
+	// Cursor Opaque timestamp and UUID tie-breaker.
+	Cursor *Cursor             `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *Limit              `form:"limit,omitempty" json:"limit,omitempty"`
+	Status *string             `form:"status,omitempty" json:"status,omitempty"`
+	UserId *openapi_types.UUID `form:"user_id,omitempty" json:"user_id,omitempty"`
 }
 
-// UpdateAssignmentParamsStatus defines parameters for UpdateAssignment.
-type UpdateAssignmentParamsStatus string
-
-// ListAssignmentSubmissionsParams defines parameters for ListAssignmentSubmissions.
-type ListAssignmentSubmissionsParams struct {
-	// Cursor Opaque base64 cursor containing the stable timestamp and UUID tie-breaker.
-	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+// AdminOverviewReportParams defines parameters for AdminOverviewReport.
+type AdminOverviewReportParams struct {
+	From *ReportFrom `form:"from,omitempty" json:"from,omitempty"`
+	To   *ReportTo   `form:"to,omitempty" json:"to,omitempty"`
 }
 
-// CreateAssignmentSubmissionParams defines parameters for CreateAssignmentSubmission.
-type CreateAssignmentSubmissionParams struct {
-	// Cursor Opaque base64 cursor containing the stable timestamp and UUID tie-breaker.
-	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+// AdminRevenueReportParams defines parameters for AdminRevenueReport.
+type AdminRevenueReportParams struct {
+	From *ReportFrom `form:"from,omitempty" json:"from,omitempty"`
+	To   *ReportTo   `form:"to,omitempty" json:"to,omitempty"`
 }
 
-// ListAuditLogsParams defines parameters for ListAuditLogs.
-type ListAuditLogsParams struct {
-	OrganizationId openapi_types.UUID `form:"organization_id" json:"organization_id"`
-
-	// Cursor Opaque base64 cursor containing the stable timestamp and UUID tie-breaker.
-	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+// AdminListUsersParams defines parameters for AdminListUsers.
+type AdminListUsersParams struct {
+	// Cursor Opaque timestamp and UUID tie-breaker.
+	Cursor *Cursor                     `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *Limit                      `form:"limit,omitempty" json:"limit,omitempty"`
+	Q      *string                     `form:"q,omitempty" json:"q,omitempty"`
+	Status *AdminListUsersParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+	Role   *AdminListUsersParamsRole   `form:"role,omitempty" json:"role,omitempty"`
 }
 
-// ListCategoriesParams defines parameters for ListCategories.
-type ListCategoriesParams struct {
-	// Cursor Opaque base64 cursor containing the stable timestamp and UUID tie-breaker.
-	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+// AdminListUsersParamsStatus defines parameters for AdminListUsers.
+type AdminListUsersParamsStatus string
+
+// AdminListUsersParamsRole defines parameters for AdminListUsers.
+type AdminListUsersParamsRole string
+
+// LogoutJSONBody defines parameters for Logout.
+type LogoutJSONBody struct {
+	RefreshToken *string `json:"refresh_token,omitempty"`
 }
 
-// ListCertificatesParams defines parameters for ListCertificates.
-type ListCertificatesParams struct {
-	// Cursor Opaque base64 cursor containing the stable timestamp and UUID tie-breaker.
-	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+// RefreshJSONBody defines parameters for Refresh.
+type RefreshJSONBody struct {
+	RefreshToken *string `json:"refresh_token,omitempty"`
 }
 
 // ListCoursesParams defines parameters for ListCourses.
 type ListCoursesParams struct {
-	// Cursor Opaque base64 cursor containing the stable timestamp and UUID tie-breaker.
-	Cursor         *Cursor             `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit          *Limit              `form:"limit,omitempty" json:"limit,omitempty"`
-	Q              *string             `form:"q,omitempty" json:"q,omitempty"`
-	OrganizationId *openapi_types.UUID `form:"organization_id,omitempty" json:"organization_id,omitempty"`
-	CategoryId     *openapi_types.UUID `form:"category_id,omitempty" json:"category_id,omitempty"`
-	Level          *string             `form:"level,omitempty" json:"level,omitempty"`
+	// Cursor Opaque timestamp and UUID tie-breaker.
+	Cursor         *Cursor                 `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit          *Limit                  `form:"limit,omitempty" json:"limit,omitempty"`
+	Q              *string                 `form:"q,omitempty" json:"q,omitempty"`
+	OrganizationId *openapi_types.UUID     `form:"organization_id,omitempty" json:"organization_id,omitempty"`
+	CategoryId     *openapi_types.UUID     `form:"category_id,omitempty" json:"category_id,omitempty"`
+	Level          *ListCoursesParamsLevel `form:"level,omitempty" json:"level,omitempty"`
 }
 
-// ListManagedCoursesParams defines parameters for ListManagedCourses.
-type ListManagedCoursesParams struct {
-	// Cursor Opaque base64 cursor containing the stable timestamp and UUID tie-breaker.
-	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
-}
-
-// AdminEnrollCourseParams defines parameters for AdminEnrollCourse.
-type AdminEnrollCourseParams struct {
-	StudentId openapi_types.UUID `form:"student_id" json:"student_id"`
-}
-
-// EnrollCourseParams defines parameters for EnrollCourse.
-type EnrollCourseParams struct {
-	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
-}
-
-// RemoveInstructorParams defines parameters for RemoveInstructor.
-type RemoveInstructorParams struct {
-	InstructorId openapi_types.UUID `form:"instructor_id" json:"instructor_id"`
-}
-
-// ListCourseStudentsParams defines parameters for ListCourseStudents.
-type ListCourseStudentsParams struct {
-	// Cursor Opaque base64 cursor containing the stable timestamp and UUID tie-breaker.
-	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
-}
-
-// RemoveDeviceTokenParams defines parameters for RemoveDeviceToken.
-type RemoveDeviceTokenParams struct {
-	Id IDQuery `form:"id" json:"id"`
-}
-
-// ListEnrollmentsParams defines parameters for ListEnrollments.
-type ListEnrollmentsParams struct {
-	// Cursor Opaque base64 cursor containing the stable timestamp and UUID tie-breaker.
-	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
-}
-
-// GetEnrollmentProgressParams defines parameters for GetEnrollmentProgress.
-type GetEnrollmentProgressParams struct {
-	// Cursor Opaque base64 cursor containing the stable timestamp and UUID tie-breaker.
-	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
-}
-
-// ListLiveSessionsParams defines parameters for ListLiveSessions.
-type ListLiveSessionsParams struct {
-	Status *string `form:"status,omitempty" json:"status,omitempty"`
-
-	// Cursor Opaque base64 cursor containing the stable timestamp and UUID tie-breaker.
-	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
-}
+// ListCoursesParamsLevel defines parameters for ListCourses.
+type ListCoursesParamsLevel string
 
 // ListNotificationsParams defines parameters for ListNotifications.
 type ListNotificationsParams struct {
-	// Cursor Opaque base64 cursor containing the stable timestamp and UUID tie-breaker.
+	// Cursor Opaque timestamp and UUID tie-breaker.
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
-// ListOrdersParams defines parameters for ListOrders.
-type ListOrdersParams struct {
-	// Cursor Opaque base64 cursor containing the stable timestamp and UUID tie-breaker.
-	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
-}
-
-// CreateOrderParams defines parameters for CreateOrder.
-type CreateOrderParams struct {
+// CreatePaymentOrderParams defines parameters for CreatePaymentOrder.
+type CreatePaymentOrderParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
-// ListOrganizationMembersParams defines parameters for ListOrganizationMembers.
-type ListOrganizationMembersParams struct {
-	// Cursor Opaque base64 cursor containing the stable timestamp and UUID tie-breaker.
+// StudentCertificatesParams defines parameters for StudentCertificates.
+type StudentCertificatesParams struct {
+	// Cursor Opaque timestamp and UUID tie-breaker.
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
-// ListPaymentsParams defines parameters for ListPayments.
-type ListPaymentsParams struct {
-	// Cursor Opaque base64 cursor containing the stable timestamp and UUID tie-breaker.
+// StudentListEnrollmentsParams defines parameters for StudentListEnrollments.
+type StudentListEnrollmentsParams struct {
+	// Cursor Opaque timestamp and UUID tie-breaker.
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
-// ListQuizzesParams defines parameters for ListQuizzes.
-type ListQuizzesParams struct {
-	CourseId openapi_types.UUID `form:"course_id" json:"course_id"`
-
-	// Cursor Opaque base64 cursor containing the stable timestamp and UUID tie-breaker.
+// StudentPaymentHistoryParams defines parameters for StudentPaymentHistory.
+type StudentPaymentHistoryParams struct {
+	// Cursor Opaque timestamp and UUID tie-breaker.
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
-// UpdateQuizParams defines parameters for UpdateQuiz.
-type UpdateQuizParams struct {
-	Status *UpdateQuizParamsStatus `form:"status,omitempty" json:"status,omitempty"`
-}
-
-// UpdateQuizParamsStatus defines parameters for UpdateQuiz.
-type UpdateQuizParamsStatus string
-
-// ListQuizAttemptsParams defines parameters for ListQuizAttempts.
-type ListQuizAttemptsParams struct {
-	// Cursor Opaque base64 cursor containing the stable timestamp and UUID tie-breaker.
+// StudentListQuizAttemptsParams defines parameters for StudentListQuizAttempts.
+type StudentListQuizAttemptsParams struct {
+	// Cursor Opaque timestamp and UUID tie-breaker.
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
-// GetAssessmentsReportParams defines parameters for GetAssessmentsReport.
-type GetAssessmentsReportParams struct {
-	From *ReportFrom `form:"from,omitempty" json:"from,omitempty"`
-	To   *ReportTo   `form:"to,omitempty" json:"to,omitempty"`
-}
-
-// GetCompletionsReportParams defines parameters for GetCompletionsReport.
-type GetCompletionsReportParams struct {
-	From *ReportFrom `form:"from,omitempty" json:"from,omitempty"`
-	To   *ReportTo   `form:"to,omitempty" json:"to,omitempty"`
-}
-
-// GetEnrollmentsReportParams defines parameters for GetEnrollmentsReport.
-type GetEnrollmentsReportParams struct {
-	From *ReportFrom `form:"from,omitempty" json:"from,omitempty"`
-	To   *ReportTo   `form:"to,omitempty" json:"to,omitempty"`
-}
-
-// GetLiveAttendanceReportParams defines parameters for GetLiveAttendanceReport.
-type GetLiveAttendanceReportParams struct {
-	From *ReportFrom `form:"from,omitempty" json:"from,omitempty"`
-	To   *ReportTo   `form:"to,omitempty" json:"to,omitempty"`
-}
-
-// GetOverviewReportParams defines parameters for GetOverviewReport.
-type GetOverviewReportParams struct {
-	From *ReportFrom `form:"from,omitempty" json:"from,omitempty"`
-	To   *ReportTo   `form:"to,omitempty" json:"to,omitempty"`
-}
-
-// GetRevenueReportParams defines parameters for GetRevenueReport.
-type GetRevenueReportParams struct {
-	From *ReportFrom `form:"from,omitempty" json:"from,omitempty"`
-	To   *ReportTo   `form:"to,omitempty" json:"to,omitempty"`
-}
-
-// MyResultsParams defines parameters for MyResults.
-type MyResultsParams struct {
-	// Cursor Opaque base64 cursor containing the stable timestamp and UUID tie-breaker.
+// StudentResultsParams defines parameters for StudentResults.
+type StudentResultsParams struct {
+	// Cursor Opaque timestamp and UUID tie-breaker.
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
-// ListUsersParams defines parameters for ListUsers.
-type ListUsersParams struct {
-	// Cursor Opaque base64 cursor containing the stable timestamp and UUID tie-breaker.
+// TeacherListAssignmentsParams defines parameters for TeacherListAssignments.
+type TeacherListAssignmentsParams struct {
+	CourseId CourseID `form:"course_id" json:"course_id"`
+
+	// Cursor Opaque timestamp and UUID tie-breaker.
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
-// UpdateAssignmentSubmissionJSONRequestBody defines body for UpdateAssignmentSubmission for application/json ContentType.
-type UpdateAssignmentSubmissionJSONRequestBody = SubmissionWrite
+// TeacherUpdateAssignmentParams defines parameters for TeacherUpdateAssignment.
+type TeacherUpdateAssignmentParams struct {
+	Status *TeacherUpdateAssignmentParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+}
 
-// GradeAssignmentJSONRequestBody defines body for GradeAssignment for application/json ContentType.
-type GradeAssignmentJSONRequestBody = GradeWrite
+// TeacherUpdateAssignmentParamsStatus defines parameters for TeacherUpdateAssignment.
+type TeacherUpdateAssignmentParamsStatus string
 
-// CreateAssignmentJSONRequestBody defines body for CreateAssignment for application/json ContentType.
-type CreateAssignmentJSONRequestBody = AssignmentWrite
+// TeacherListCoursesParams defines parameters for TeacherListCourses.
+type TeacherListCoursesParams struct {
+	// Cursor Opaque timestamp and UUID tie-breaker.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+}
 
-// UpdateAssignmentJSONRequestBody defines body for UpdateAssignment for application/json ContentType.
-type UpdateAssignmentJSONRequestBody = AssignmentWrite
+// TeacherListLiveClassesParams defines parameters for TeacherListLiveClasses.
+type TeacherListLiveClassesParams struct {
+	Status *string `form:"status,omitempty" json:"status,omitempty"`
 
-// CreateAssignmentSubmissionJSONRequestBody defines body for CreateAssignmentSubmission for application/json ContentType.
-type CreateAssignmentSubmissionJSONRequestBody = SubmissionWrite
+	// Cursor Opaque timestamp and UUID tie-breaker.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+}
 
-// CreateCategoryJSONRequestBody defines body for CreateCategory for application/json ContentType.
-type CreateCategoryJSONRequestBody = CategoryWrite
+// TeacherListQuizzesParams defines parameters for TeacherListQuizzes.
+type TeacherListQuizzesParams struct {
+	CourseId CourseID `form:"course_id" json:"course_id"`
 
-// UpdateCategoryJSONRequestBody defines body for UpdateCategory for application/json ContentType.
-type UpdateCategoryJSONRequestBody = CategoryWrite
+	// Cursor Opaque timestamp and UUID tie-breaker.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+}
 
-// CreateCourseJSONRequestBody defines body for CreateCourse for application/json ContentType.
-type CreateCourseJSONRequestBody = CourseWrite
+// TeacherUpdateQuizParams defines parameters for TeacherUpdateQuiz.
+type TeacherUpdateQuizParams struct {
+	Status *TeacherUpdateQuizParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+}
 
-// UpdateCourseJSONRequestBody defines body for UpdateCourse for application/json ContentType.
-type UpdateCourseJSONRequestBody = CourseWrite
+// TeacherUpdateQuizParamsStatus defines parameters for TeacherUpdateQuiz.
+type TeacherUpdateQuizParamsStatus string
 
-// AssignInstructorJSONRequestBody defines body for AssignInstructor for application/json ContentType.
-type AssignInstructorJSONRequestBody = InstructorAssignment
+// TeacherOverviewReportParams defines parameters for TeacherOverviewReport.
+type TeacherOverviewReportParams struct {
+	From *ReportFrom `form:"from,omitempty" json:"from,omitempty"`
+	To   *ReportTo   `form:"to,omitempty" json:"to,omitempty"`
+}
 
-// CreateModuleJSONRequestBody defines body for CreateModule for application/json ContentType.
-type CreateModuleJSONRequestBody = ModuleWrite
+// TeacherGradeSubmissionParams defines parameters for TeacherGradeSubmission.
+type TeacherGradeSubmissionParams struct {
+	ReturnForResubmission *bool `form:"return_for_resubmission,omitempty" json:"return_for_resubmission,omitempty"`
+}
 
-// RegisterDeviceTokenJSONRequestBody defines body for RegisterDeviceToken for application/json ContentType.
-type RegisterDeviceTokenJSONRequestBody = DeviceTokenWrite
+// AdminReplaceUserRolesJSONRequestBody defines body for AdminReplaceUserRoles for application/json ContentType.
+type AdminReplaceUserRolesJSONRequestBody = RoleWrite
 
-// UpdateLessonProgressJSONRequestBody defines body for UpdateLessonProgress for application/json ContentType.
-type UpdateLessonProgressJSONRequestBody = ProgressWrite
+// AdminSetUserStatusJSONRequestBody defines body for AdminSetUserStatus for application/json ContentType.
+type AdminSetUserStatusJSONRequestBody = UserStatusWrite
 
-// AcceptInvitationJSONRequestBody defines body for AcceptInvitation for application/json ContentType.
-type AcceptInvitationJSONRequestBody = InvitationAccept
+// ChangePasswordJSONRequestBody defines body for ChangePassword for application/json ContentType.
+type ChangePasswordJSONRequestBody = ChangePasswordRequest
 
-// UpdateLessonJSONRequestBody defines body for UpdateLesson for application/json ContentType.
-type UpdateLessonJSONRequestBody = LessonWrite
+// ForgotPasswordJSONRequestBody defines body for ForgotPassword for application/json ContentType.
+type ForgotPasswordJSONRequestBody = ForgotPasswordRequest
 
-// CreateLiveSessionJSONRequestBody defines body for CreateLiveSession for application/json ContentType.
-type CreateLiveSessionJSONRequestBody = LiveSessionWrite
+// LoginJSONRequestBody defines body for Login for application/json ContentType.
+type LoginJSONRequestBody = LoginRequest
 
-// UpdateLiveSessionJSONRequestBody defines body for UpdateLiveSession for application/json ContentType.
-type UpdateLiveSessionJSONRequestBody = LiveSessionWrite
+// LogoutJSONRequestBody defines body for Logout for application/json ContentType.
+type LogoutJSONRequestBody LogoutJSONBody
+
+// RefreshJSONRequestBody defines body for Refresh for application/json ContentType.
+type RefreshJSONRequestBody RefreshJSONBody
+
+// RegisterJSONRequestBody defines body for Register for application/json ContentType.
+type RegisterJSONRequestBody = RegisterRequest
+
+// ResetPasswordJSONRequestBody defines body for ResetPassword for application/json ContentType.
+type ResetPasswordJSONRequestBody = ResetPasswordRequest
+
+// VerifyEmailJSONRequestBody defines body for VerifyEmail for application/json ContentType.
+type VerifyEmailJSONRequestBody = TokenRequest
+
+// RegisterDeviceJSONRequestBody defines body for RegisterDevice for application/json ContentType.
+type RegisterDeviceJSONRequestBody = DeviceTokenWrite
 
 // CreateUploadIntentJSONRequestBody defines body for CreateUploadIntent for application/json ContentType.
 type CreateUploadIntentJSONRequestBody = UploadIntentWrite
 
-// UpdateModuleJSONRequestBody defines body for UpdateModule for application/json ContentType.
-type UpdateModuleJSONRequestBody = ModuleWrite
+// CreatePaymentOrderJSONRequestBody defines body for CreatePaymentOrder for application/json ContentType.
+type CreatePaymentOrderJSONRequestBody = OrderWrite
 
-// CreateLessonJSONRequestBody defines body for CreateLesson for application/json ContentType.
-type CreateLessonJSONRequestBody = LessonWrite
+// StudentCreateSubmissionJSONRequestBody defines body for StudentCreateSubmission for application/json ContentType.
+type StudentCreateSubmissionJSONRequestBody = SubmissionWrite
 
-// CreateOrderJSONRequestBody defines body for CreateOrder for application/json ContentType.
-type CreateOrderJSONRequestBody = OrderWrite
+// StudentUpdateProgressJSONRequestBody defines body for StudentUpdateProgress for application/json ContentType.
+type StudentUpdateProgressJSONRequestBody = ProgressWrite
 
-// CreateOrganizationJSONRequestBody defines body for CreateOrganization for application/json ContentType.
-type CreateOrganizationJSONRequestBody = OrganizationWrite
+// StudentSaveQuizAnswerJSONRequestBody defines body for StudentSaveQuizAnswer for application/json ContentType.
+type StudentSaveQuizAnswerJSONRequestBody = AnswerWrite
 
-// UpdateOrganizationJSONRequestBody defines body for UpdateOrganization for application/json ContentType.
-type UpdateOrganizationJSONRequestBody = OrganizationWrite
+// TeacherCreateAssignmentJSONRequestBody defines body for TeacherCreateAssignment for application/json ContentType.
+type TeacherCreateAssignmentJSONRequestBody = AssignmentWrite
 
-// CreateInvitationJSONRequestBody defines body for CreateInvitation for application/json ContentType.
-type CreateInvitationJSONRequestBody = InvitationWrite
+// TeacherUpdateAssignmentJSONRequestBody defines body for TeacherUpdateAssignment for application/json ContentType.
+type TeacherUpdateAssignmentJSONRequestBody = AssignmentWrite
 
-// UpdateOrganizationMembershipJSONRequestBody defines body for UpdateOrganizationMembership for application/json ContentType.
-type UpdateOrganizationMembershipJSONRequestBody = MembershipUpdate
+// TeacherCreateCourseJSONRequestBody defines body for TeacherCreateCourse for application/json ContentType.
+type TeacherCreateCourseJSONRequestBody = CourseWrite
 
-// SaveQuizAnswerJSONRequestBody defines body for SaveQuizAnswer for application/json ContentType.
-type SaveQuizAnswerJSONRequestBody = AnswerWrite
+// TeacherUpdateCourseJSONRequestBody defines body for TeacherUpdateCourse for application/json ContentType.
+type TeacherUpdateCourseJSONRequestBody = CourseWrite
 
-// GradeQuizAttemptJSONRequestBody defines body for GradeQuizAttempt for application/json ContentType.
-type GradeQuizAttemptJSONRequestBody = GradeWrite
+// TeacherCreateModuleJSONRequestBody defines body for TeacherCreateModule for application/json ContentType.
+type TeacherCreateModuleJSONRequestBody = ModuleWrite
 
-// UpdateQuizQuestionJSONRequestBody defines body for UpdateQuizQuestion for application/json ContentType.
-type UpdateQuizQuestionJSONRequestBody = QuestionWrite
+// TeacherUpdateLessonJSONRequestBody defines body for TeacherUpdateLesson for application/json ContentType.
+type TeacherUpdateLessonJSONRequestBody = LessonWrite
 
-// CreateQuizJSONRequestBody defines body for CreateQuiz for application/json ContentType.
-type CreateQuizJSONRequestBody = QuizWrite
+// TeacherCreateLiveClassJSONRequestBody defines body for TeacherCreateLiveClass for application/json ContentType.
+type TeacherCreateLiveClassJSONRequestBody = LiveSessionWrite
 
-// UpdateQuizJSONRequestBody defines body for UpdateQuiz for application/json ContentType.
-type UpdateQuizJSONRequestBody = QuizWrite
+// TeacherUpdateLiveClassJSONRequestBody defines body for TeacherUpdateLiveClass for application/json ContentType.
+type TeacherUpdateLiveClassJSONRequestBody = LiveSessionWrite
 
-// CreateQuizQuestionJSONRequestBody defines body for CreateQuizQuestion for application/json ContentType.
-type CreateQuizQuestionJSONRequestBody = QuestionWrite
+// TeacherUpdateModuleJSONRequestBody defines body for TeacherUpdateModule for application/json ContentType.
+type TeacherUpdateModuleJSONRequestBody = ModuleWrite
+
+// TeacherCreateLessonJSONRequestBody defines body for TeacherCreateLesson for application/json ContentType.
+type TeacherCreateLessonJSONRequestBody = LessonWrite
+
+// TeacherUpdateQuizQuestionJSONRequestBody defines body for TeacherUpdateQuizQuestion for application/json ContentType.
+type TeacherUpdateQuizQuestionJSONRequestBody = QuestionWrite
+
+// TeacherCreateQuizJSONRequestBody defines body for TeacherCreateQuiz for application/json ContentType.
+type TeacherCreateQuizJSONRequestBody = QuizWrite
+
+// TeacherUpdateQuizJSONRequestBody defines body for TeacherUpdateQuiz for application/json ContentType.
+type TeacherUpdateQuizJSONRequestBody = QuizWrite
+
+// TeacherCreateQuizQuestionJSONRequestBody defines body for TeacherCreateQuizQuestion for application/json ContentType.
+type TeacherCreateQuizQuestionJSONRequestBody = QuestionWrite
+
+// TeacherGradeSubmissionJSONRequestBody defines body for TeacherGradeSubmission for application/json ContentType.
+type TeacherGradeSubmissionJSONRequestBody = GradeWrite
+
+// UpdateCurrentProfileJSONRequestBody defines body for UpdateCurrentProfile for application/json ContentType.
+type UpdateCurrentProfileJSONRequestBody = ProfileWrite

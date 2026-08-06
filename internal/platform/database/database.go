@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Faysal9991/edtech_Backend/internal/platform/config"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/neoscoder/lms-service/internal/platform/config"
 )
 
 func Open(ctx context.Context, cfg config.Database) (*pgxpool.Pool, error) {

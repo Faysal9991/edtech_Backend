@@ -20,6 +20,9 @@ VALUES (sqlc.arg(id),sqlc.arg(organization_id),sqlc.narg(category_id),sqlc.narg(
 -- name: GetCourse :one
 SELECT * FROM courses WHERE id=$1;
 
+-- name: GetPublishedCourseBySlug :one
+SELECT * FROM courses WHERE slug = sqlc.arg(slug) AND status = 'published';
+
 -- name: GetCourseByModule :one
 SELECT c.* FROM courses c JOIN course_modules m ON m.course_id=c.id WHERE m.id=$1;
 

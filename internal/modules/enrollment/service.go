@@ -7,15 +7,15 @@ import (
 	"fmt"
 	"math"
 
-	api "github.com/Faysal9991/edtech_Backend/internal/api"
-	"github.com/Faysal9991/edtech_Backend/internal/data"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/clock"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/database"
-	platformid "github.com/Faysal9991/edtech_Backend/internal/platform/id"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/queue"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	api "github.com/neoscoder/lms-service/internal/api"
+	"github.com/neoscoder/lms-service/internal/data"
+	"github.com/neoscoder/lms-service/internal/platform/clock"
+	"github.com/neoscoder/lms-service/internal/platform/database"
+	platformid "github.com/neoscoder/lms-service/internal/platform/id"
+	"github.com/neoscoder/lms-service/internal/platform/queue"
 )
 
 var (
@@ -163,7 +163,7 @@ func (s *Service) Cancel(ctx context.Context, id, userID uuid.UUID, privileged b
 }
 
 func (s *Service) UpdateProgress(ctx context.Context, enrollmentID, lessonID, userID uuid.UUID, in api.ProgressWrite) (api.Progress, error) {
-	if in.PositionSeconds < 0 || in.WatchedSecondsDelta < 0 || in.WatchedSecondsDelta > 120 {
+	if in.PositionSeconds < 0 || in.PositionSeconds > math.MaxInt32 || in.WatchedSecondsDelta < 0 || in.WatchedSecondsDelta > 120 {
 		return api.Progress{}, errors.New("invalid progress values")
 	}
 	enrollment, err := s.GetOwned(ctx, enrollmentID, userID, false)
@@ -199,6 +199,9 @@ func (s *Service) UpdateProgress(ctx context.Context, enrollmentID, lessonID, us
 	if existingFound {
 		total += int(existing.TotalWatchedSeconds)
 	}
+	if total > math.MaxInt32 {
+		return api.Progress{}, errors.New("total watched time exceeds the supported range")
+	}
 	durationCap := int32(math.MaxInt32)
 	if lesson.LessonType == "video" && lesson.DurationSeconds.Valid {
 		durationCap = lesson.DurationSeconds.Int32
@@ -215,7 +218,7 @@ func (s *Service) UpdateProgress(ctx context.Context, enrollmentID, lessonID, us
 	if stateErr != nil {
 		return api.Progress{}, stateErr
 	}
-	row, err := s.q.UpsertLessonProgress(ctx, data.UpsertLessonProgressParams{ID: s.ids.New(), EnrollmentID: enrollmentID, LessonID: lessonID, State: state, LastPositionSeconds: int32(in.PositionSeconds), TotalWatchedSeconds: int32(total), DurationCap: durationCap})
+	row, err := s.q.UpsertLessonProgress(ctx, data.UpsertLessonProgressParams{ID: s.ids.New(), EnrollmentID: enrollmentID, LessonID: lessonID, State: state, LastPositionSeconds: int32(in.PositionSeconds), TotalWatchedSeconds: int32(total), DurationCap: durationCap}) // #nosec G115 -- both values are bounded above
 	if err != nil {
 		return api.Progress{}, err
 	}

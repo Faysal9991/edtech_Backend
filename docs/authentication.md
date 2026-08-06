@@ -1,56 +1,11 @@
-# Authentication
+# Authentication and session lifecycle
 
-## Firebase flow
+LMS Service owns first-party email/password authentication. Passwords are Argon2id PHC strings. Registration creates a `pending` account, student profile/roles, an active default-organization membership, and a hashed one-use email-verification token. Verification activates the account.
 
-```mermaid
-sequenceDiagram
-  participant App as Flutter app
-  participant FB as Firebase Authentication
-  participant API as LMS API
-  participant DB as PostgreSQL
-  App->>FB: sign in / register
-  FB-->>App: Firebase ID token
-  App->>API: Authorization: Bearer token
-  API->>FB: VerifyIDTokenAndCheckRevoked
-  FB-->>API: uid, email, name
-  API->>DB: upsert users by firebase_uid
-  API->>DB: read active memberships and roles
-  API-->>App: local user and memberships
-```
+Login applies Redis/IP rate limits and a per-account lock threshold, verifies Argon2id in constant time, rechecks account state, and issues a short-lived signed access JWT plus an opaque refresh token. JWT validation requires HS256, the configured key ID, issuer, audience, `access` token type, UUID subject, and valid time claims. Database user state and roles are reloaded on every request rather than trusted from stale claims.
 
-No Firebase password, refresh token, or second application JWT is stored or issued. Local status can suspend or delete access immediately. Role changes take effect on the next request because roles are read from PostgreSQL rather than Firebase custom claims.
+Each refresh token is represented by a SHA-256 hash in a session family. Rotation locks the presented row, marks it rotated, creates one child, and returns a new pair. Presenting a rotated or revoked token commits family-wide revocation and an audit event before returning unauthorized. Logout revokes one hash; logout-all, password change/reset, account suspension, and role replacement revoke every active session.
 
-Production uses Application Default Credentials. For local real-Firebase testing, point `GOOGLE_APPLICATION_CREDENTIALS` at a file outside the repository and set `FIREBASE_PROJECT_ID`. Verify a real Flutter token with:
+Forgot-password always returns the same accepted response. Reset and verification tokens expire and are consumed atomically. Development/test responses expose newly created workflow tokens so local completion does not require email credentials; production never returns or logs them.
 
-```bash
-curl -X POST "$PUBLIC_API_URL/api/v1/auth/bootstrap" \
-  -H "Authorization: Bearer $FIREBASE_ID_TOKEN"
-```
-
-The bootstrap and sensitive paths are Redis-rate-limited. Revoking sessions calls Firebase Admin `RevokeRefreshTokens`; already issued tokens are checked for revocation by the verifier.
-
-## Development fake identity
-
-`dev:<email>` tokens are accepted only if `APP_ENV` is `development` or `test` and `FAKE_AUTH_ENABLED=true`. Configuration validation refuses fake authentication in production. Seeded users have deterministic development UIDs derived from normalized email.
-
-## Invitations
-
-Invitation tokens contain at least 256 random bits. PostgreSQL stores only their SHA-256 hashes. Acceptance locks the invitation, verifies pending status and expiry, and compares the authenticated Firebase email case-insensitively. Membership and role are created in that transaction.
-
-## First production administrator
-
-1. Apply migrations.
-2. Create or identify the administrator in the correct Firebase project and copy the UID/email from Firebase Admin.
-3. Export production configuration plus:
-
-```bash
-export BOOTSTRAP_ADMIN_CONFIRM=CREATE_FIRST_SUPER_ADMIN
-export BOOTSTRAP_FIREBASE_UID='firebase-uid-from-admin-console'
-export BOOTSTRAP_EMAIL='admin@example.com'
-export BOOTSTRAP_DISPLAY_NAME='Platform Administrator'
-export BOOTSTRAP_ORGANIZATION_NAME='Initial Organization'
-export BOOTSTRAP_ORGANIZATION_SLUG='initial-organization'
-go run ./cmd/bootstrap-admin
-```
-
-The command locks its work in one transaction and refuses to run when an active super administrator already exists. It never accepts a password.
+Argon2id defaults are 64 MiB memory, three iterations, parallelism two, a 16-byte random salt, and a 32-byte key. Encoded parameters are strictly bounded before verification to prevent attacker-controlled memory/CPU amplification.

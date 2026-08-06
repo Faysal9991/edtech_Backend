@@ -5,6 +5,9 @@ VALUES ($1,$2,$3,$4,$5,now()) ON CONFLICT(token_hash) DO UPDATE SET user_id=EXCL
 -- name: RemoveDeviceToken :execrows
 DELETE FROM device_tokens WHERE id=$1 AND user_id=$2;
 
+-- name: RemoveDeviceTokenByHash :execrows
+DELETE FROM device_tokens WHERE token_hash=$1 AND user_id=$2;
+
 -- name: ListNotifications :many
 SELECT * FROM notifications WHERE user_id=sqlc.arg(user_id)
  AND (sqlc.narg(cursor_created_at)::timestamptz IS NULL OR (created_at,id)<(sqlc.narg(cursor_created_at),sqlc.narg(cursor_id)::uuid))
@@ -25,10 +28,12 @@ VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT(deduplication_key) DO NOTHING;
 
 -- name: ClaimOutboxEvents :many
 WITH claimed AS (
- SELECT id FROM outbox_events WHERE status IN ('pending','failed') AND next_attempt_at<=now()
+ SELECT id FROM outbox_events
+ WHERE (status IN ('pending','failed') AND next_attempt_at<=now())
+    OR (status='processing' AND claimed_at<now()-interval '10 minutes')
  ORDER BY next_attempt_at,id FOR UPDATE SKIP LOCKED LIMIT $1
 )
-UPDATE outbox_events o SET status='processing',attempts=attempts+1
+UPDATE outbox_events o SET status='processing',attempts=attempts+1,claimed_at=now()
 FROM claimed WHERE o.id=claimed.id RETURNING o.*;
 
 -- name: CreateNotification :one
@@ -50,10 +55,13 @@ UPDATE notification_deliveries SET status=$2,attempts=attempts+1,next_attempt_at
 DELETE FROM device_tokens WHERE id=$1;
 
 -- name: SetOutboxPublished :one
-UPDATE outbox_events SET status='published',published_at=now(),last_error=NULL WHERE id=$1 RETURNING *;
+UPDATE outbox_events SET status='published',published_at=now(),last_error=NULL,claimed_at=NULL WHERE id=$1 RETURNING *;
 
 -- name: SetOutboxFailed :one
-UPDATE outbox_events SET status='failed',next_attempt_at=$2,last_error=$3 WHERE id=$1 RETURNING *;
+UPDATE outbox_events SET status='failed',next_attempt_at=$2,last_error=$3,claimed_at=NULL WHERE id=$1 RETURNING *;
+
+-- name: SetOutboxDeadLetter :one
+UPDATE outbox_events SET status='dead_letter',dead_lettered_at=now(),last_error=$2,claimed_at=NULL WHERE id=$1 RETURNING *;
 
 -- name: ListOrganizationStudentIDs :many
 SELECT DISTINCT m.user_id FROM organization_memberships m JOIN membership_roles mr ON mr.membership_id=m.id JOIN roles r ON r.id=mr.role_id

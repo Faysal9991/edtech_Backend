@@ -280,7 +280,7 @@ func (q *Queries) SetCertificateReady(ctx context.Context, arg SetCertificateRea
 const verifyCertificate = `-- name: VerifyCertificate :one
 SELECT c.certificate_number,c.status,c.issued_at,u.display_name AS student_name,co.title AS course_title,o.name AS organization_name
 FROM certificates c JOIN users u ON u.id=c.student_id JOIN courses co ON co.id=c.course_id JOIN organizations o ON o.id=c.organization_id
-WHERE c.verification_code=$1
+WHERE c.verification_code=$1 OR c.certificate_number=$1
 `
 
 type VerifyCertificateRow struct {

@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Faysal9991/edtech_Backend/internal/data"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/neoscoder/lms-service/internal/data"
 )
 
 func TestDelayedResultVisibility(t *testing.T) {
@@ -41,11 +41,18 @@ func TestViewDoesNotLeakAnswers(t *testing.T) {
 	id := uuid.New()
 	snapshot := Snapshot{Questions: []SnapshotQuestion{{ID: id, Options: []SnapshotOption{{ID: uuid.New(), Correct: true}}}}}
 	attempt := data.QuizAttempt{ID: id, QuizID: id, StartedAt: pgtype.Timestamptz{Valid: true}, Percentage: numeric(100), Passed: pgtype.Bool{Bool: true, Valid: true}}
-	v := view(attempt, snapshot, false)
+	v := view(attempt, snapshot, false, false)
 	if v.Questions[0].Options[0].Correct != nil {
 		t.Fatal("correct answer leaked before submission")
 	}
 	if v.Percentage != nil || v.Passed != nil {
 		t.Fatal("score leaked before the result visibility policy allowed release")
+	}
+	v = view(attempt, snapshot, false, true)
+	if v.Questions[0].Options[0].Correct != nil {
+		t.Fatal("correct answer leaked when only score visibility was enabled")
+	}
+	if v.Percentage == nil || v.Passed == nil {
+		t.Fatal("score should be visible independently of answer keys")
 	}
 }

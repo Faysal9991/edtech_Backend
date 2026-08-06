@@ -5,16 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
-	api "github.com/Faysal9991/edtech_Backend/internal/api"
-	"github.com/Faysal9991/edtech_Backend/internal/data"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/database"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/httpx"
-	platformid "github.com/Faysal9991/edtech_Backend/internal/platform/id"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	api "github.com/neoscoder/lms-service/internal/api"
+	"github.com/neoscoder/lms-service/internal/data"
+	"github.com/neoscoder/lms-service/internal/platform/database"
+	"github.com/neoscoder/lms-service/internal/platform/httpx"
+	platformid "github.com/neoscoder/lms-service/internal/platform/id"
 )
 
 var (
@@ -91,7 +92,23 @@ func (s *Service) Create(ctx context.Context, orgID, actorID uuid.UUID, in api.C
 	if err := s.validateThumbnail(ctx, orgID, in.ThumbnailAssetId); err != nil {
 		return api.Course{}, err
 	}
-	row, err := s.q.CreateCourse(ctx, data.CreateCourseParams{ID: s.ids.New(), OrganizationID: orgID, CategoryID: nullUUID(in.CategoryId), ThumbnailAssetID: nullUUID(in.ThumbnailAssetId), Title: strings.TrimSpace(in.Title), Slug: httpx.NormalizeSlug(in.Slug), Description: strings.TrimSpace(in.Description), Language: in.Language, Level: string(in.Level), IsFree: in.IsFree, PriceMinor: in.PriceMinor, Currency: in.Currency, CreatedBy: actorID})
+	var row data.Course
+	err := database.WithinTx(ctx, s.db, func(tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		var createErr error
+		row, createErr = q.CreateCourse(ctx, data.CreateCourseParams{ID: s.ids.New(), OrganizationID: orgID, CategoryID: nullUUID(in.CategoryId), ThumbnailAssetID: nullUUID(in.ThumbnailAssetId), Title: strings.TrimSpace(in.Title), Slug: httpx.NormalizeSlug(in.Slug), Description: strings.TrimSpace(in.Description), Language: in.Language, Level: string(in.Level), IsFree: in.IsFree, PriceMinor: in.PriceMinor, Currency: in.Currency, CreatedBy: actorID})
+		if createErr != nil {
+			return createErr
+		}
+		isInstructor, createErr := q.HasOrganizationRole(ctx, data.HasOrganizationRoleParams{OrganizationID: orgID, UserID: actorID, RoleCode: "instructor"})
+		if createErr != nil {
+			return createErr
+		}
+		if isInstructor {
+			return q.AssignCourseInstructor(ctx, data.AssignCourseInstructorParams{CourseID: row.ID, InstructorID: actorID, AssignedBy: actorID})
+		}
+		return nil
+	})
 	if err != nil {
 		return api.Course{}, err
 	}
@@ -182,43 +199,21 @@ func (s *Service) SetStatus(ctx context.Context, courseID, actorID uuid.UUID, st
 	default:
 		return api.Course{}, errors.New("invalid course status")
 	}
-	if status == "published" {
-		facts, err := s.q.CoursePublishFacts(ctx, courseID)
-		if err != nil {
-			return api.Course{}, err
-		}
-		var violations []string
-		if strings.TrimSpace(facts.Title) == "" {
-			violations = append(violations, "title is required")
-		}
-		if strings.TrimSpace(facts.Description) == "" {
-			violations = append(violations, "description is required")
-		}
-		if facts.InstructorCount < 1 {
-			violations = append(violations, "at least one instructor is required")
-		}
-		if facts.ModuleCount < 1 {
-			violations = append(violations, "at least one module is required")
-		}
-		if facts.PublishedLessonCount < 1 {
-			violations = append(violations, "at least one published lesson is required")
-		}
-		if !facts.IsFree && facts.PriceMinor <= 0 {
-			violations = append(violations, "paid course price must be positive")
-		}
-		if facts.UnreadyMediaCount > 0 {
-			violations = append(violations, "all referenced media must be ready")
-		}
-		if len(violations) > 0 {
-			return api.Course{}, fmt.Errorf("course cannot be published: %s", strings.Join(violations, "; "))
-		}
-	}
 	var row data.Course
 	err := database.WithinTx(ctx, s.db, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		before, err := q.GetCourseForUpdate(ctx, courseID)
 		if err != nil {
 			return err
+		}
+		if status == "published" {
+			facts, factsErr := q.CoursePublishFacts(ctx, courseID)
+			if factsErr != nil {
+				return factsErr
+			}
+			if validationErr := validatePublishFacts(facts); validationErr != nil {
+				return validationErr
+			}
 		}
 		row, err = q.SetCourseStatus(ctx, data.SetCourseStatusParams{ID: courseID, Status: status})
 		if err != nil {
@@ -246,26 +241,58 @@ func (s *Service) SetStatus(ctx context.Context, courseID, actorID uuid.UUID, st
 	return asAPI(row), nil
 }
 
+func validatePublishFacts(facts data.CoursePublishFactsRow) error {
+	var violations []string
+	if strings.TrimSpace(facts.Title) == "" {
+		violations = append(violations, "title is required")
+	}
+	if strings.TrimSpace(facts.Description) == "" {
+		violations = append(violations, "description is required")
+	}
+	if facts.InstructorCount < 1 {
+		violations = append(violations, "at least one instructor is required")
+	}
+	if facts.ModuleCount < 1 {
+		violations = append(violations, "at least one module is required")
+	}
+	if facts.PublishedLessonCount < 1 {
+		violations = append(violations, "at least one published lesson is required")
+	}
+	if !facts.IsFree && facts.PriceMinor <= 0 {
+		violations = append(violations, "paid course price must be positive")
+	}
+	if facts.UnreadyMediaCount > 0 {
+		violations = append(violations, "all referenced media must be ready")
+	}
+	if len(violations) > 0 {
+		return fmt.Errorf("course cannot be published: %s", strings.Join(violations, "; "))
+	}
+	return nil
+}
+
 func (s *Service) CreateModule(ctx context.Context, courseID uuid.UUID, in api.ModuleWrite) (data.CourseModule, error) {
-	if in.Position < 1 || strings.TrimSpace(in.Title) == "" {
+	if in.Position < 1 || in.Position > math.MaxInt32 || strings.TrimSpace(in.Title) == "" {
 		return data.CourseModule{}, errors.New("module title and positive position are required")
 	}
 	description := ""
 	if in.Description != nil {
 		description = *in.Description
 	}
-	return s.q.CreateModule(ctx, data.CreateModuleParams{ID: s.ids.New(), CourseID: courseID, Title: strings.TrimSpace(in.Title), Description: description, Position: int32(in.Position)})
+	return s.q.CreateModule(ctx, data.CreateModuleParams{ID: s.ids.New(), CourseID: courseID, Title: strings.TrimSpace(in.Title), Description: description, Position: int32(in.Position)}) // #nosec G115 -- range checked above
 }
 func (s *Service) UpdateModule(ctx context.Context, id uuid.UUID, in api.ModuleWrite) (data.CourseModule, error) {
+	if in.Position < 1 || in.Position > math.MaxInt32 || strings.TrimSpace(in.Title) == "" {
+		return data.CourseModule{}, errors.New("module title and positive position are required")
+	}
 	description := ""
 	if in.Description != nil {
 		description = *in.Description
 	}
-	return s.q.UpdateModule(ctx, data.UpdateModuleParams{ID: id, Title: strings.TrimSpace(in.Title), Description: description, Position: int32(in.Position)})
+	return s.q.UpdateModule(ctx, data.UpdateModuleParams{ID: id, Title: strings.TrimSpace(in.Title), Description: description, Position: int32(in.Position)}) // #nosec G115 -- range checked above
 }
 
 func lessonParams(in api.LessonWrite) (string, string, string, uuid.NullUUID, string, int32, bool, bool, bool, pgtype.Int4, error) {
-	if strings.TrimSpace(in.Title) == "" || in.Position < 1 {
+	if strings.TrimSpace(in.Title) == "" || in.Position < 1 || in.Position > math.MaxInt32 {
 		return "", "", "", uuid.NullUUID{}, "", 0, false, false, false, pgtype.Int4{}, errors.New("lesson title and positive position are required")
 	}
 	description, body := "", ""
@@ -277,9 +304,12 @@ func lessonParams(in api.LessonWrite) (string, string, string, uuid.NullUUID, st
 	}
 	duration := pgtype.Int4{}
 	if in.DurationSeconds != nil {
-		duration = pgtype.Int4{Int32: int32(*in.DurationSeconds), Valid: true}
+		if *in.DurationSeconds < 0 || *in.DurationSeconds > math.MaxInt32 {
+			return "", "", "", uuid.NullUUID{}, "", 0, false, false, false, pgtype.Int4{}, errors.New("lesson duration is outside the supported range")
+		}
+		duration = pgtype.Int4{Int32: int32(*in.DurationSeconds), Valid: true} // #nosec G115 -- range checked above
 	}
-	return strings.TrimSpace(in.Title), description, string(in.LessonType), nullUUID(in.MediaAssetId), body, int32(in.Position), in.IsPreview, in.IsRequired, in.IsPublished, duration, nil
+	return strings.TrimSpace(in.Title), description, string(in.LessonType), nullUUID(in.MediaAssetId), body, int32(in.Position), in.IsPreview, in.IsRequired, in.IsPublished, duration, nil // #nosec G115 -- range checked above
 }
 func (s *Service) CreateLesson(ctx context.Context, moduleID uuid.UUID, in api.LessonWrite) (data.Lesson, error) {
 	title, desc, kind, asset, body, pos, preview, required, published, duration, err := lessonParams(in)

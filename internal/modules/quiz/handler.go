@@ -5,14 +5,14 @@ import (
 	"net/http"
 	"strings"
 
-	api "github.com/Faysal9991/edtech_Backend/internal/api"
-	"github.com/Faysal9991/edtech_Backend/internal/data"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/auth"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/httpx"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	api "github.com/neoscoder/lms-service/internal/api"
+	"github.com/neoscoder/lms-service/internal/data"
+	"github.com/neoscoder/lms-service/internal/platform/auth"
+	"github.com/neoscoder/lms-service/internal/platform/httpx"
 )
 
 type Handler struct {
@@ -224,7 +224,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, err)
 		return
 	}
-	row, err := h.q.UpdateQuiz(r.Context(), data.UpdateQuizParams{Title: strings.TrimSpace(in.Title), Instructions: value(in.Instructions), TimeLimitSeconds: nullableInt(in.TimeLimitSeconds), AttemptLimit: int32(in.AttemptLimit), PassPercentage: numeric(float64(in.PassPercentage)), RandomizeQuestions: valueBool(in.RandomizeQuestions), RandomizeOptions: valueBool(in.RandomizeOptions), AvailableFrom: nullableTime(in.AvailableFrom), AvailableUntil: nullableTime(in.AvailableUntil), ResultsVisibility: visibilityValue(in.ResultsVisibility), IsRequired: valueBool(in.IsRequired), ID: id})
+	row, err := h.q.UpdateQuiz(r.Context(), data.UpdateQuizParams{Title: strings.TrimSpace(in.Title), Instructions: value(in.Instructions), TimeLimitSeconds: nullableInt(in.TimeLimitSeconds), AttemptLimit: int32(in.AttemptLimit), PassPercentage: numeric(float64(in.PassPercentage)), RandomizeQuestions: valueBool(in.RandomizeQuestions), RandomizeOptions: valueBool(in.RandomizeOptions), AvailableFrom: nullableTime(in.AvailableFrom), AvailableUntil: nullableTime(in.AvailableUntil), ResultsVisibility: visibilityValue(in.ResultsVisibility), IsRequired: valueBool(in.IsRequired), ID: id}) // #nosec G115 -- attempt limit validated to 1..100
 	if err != nil {
 		fail(w, r, err)
 		return
@@ -393,7 +393,7 @@ func (h *Handler) Attempts(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		reveal := row.Status != "in_progress" && canReveal(quiz, h.s.clock.Now())
-		items = append(items, view(row, snapshot, reveal))
+		items = append(items, view(row, snapshot, false, reveal))
 	}
 	response := map[string]any{"items": items}
 	if len(rows) == int(size) {

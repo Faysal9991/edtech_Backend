@@ -5,9 +5,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/Faysal9991/edtech_Backend/internal/data"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/neoscoder/lms-service/internal/data"
 )
 
 type Service struct{ q *data.Queries }
@@ -18,11 +18,28 @@ type Overview struct {
 	TotalStudents        int64   `json:"total_students"`
 	TotalInstructors     int64   `json:"total_instructors"`
 	PublishedCourses     int64   `json:"published_courses"`
+	TotalEnrollments     int64   `json:"total_enrollments"`
 	ActiveEnrollments    int64   `json:"active_enrollments"`
 	CompletedEnrollments int64   `json:"completed_enrollments"`
 	CompletionRate       float64 `json:"completion_rate"`
+	PendingPayments      int64   `json:"pending_payments"`
+	PaidPayments         int64   `json:"paid_payments"`
+	FailedPayments       int64   `json:"failed_payments"`
+	RefundedPayments     int64   `json:"refunded_payments"`
 	GrossRevenueMinor    int64   `json:"gross_revenue_minor"`
 	RefundAmountMinor    int64   `json:"refund_amount_minor"`
+}
+
+type TeacherOverview struct {
+	TotalCourses                int64   `json:"total_courses"`
+	PublishedCourses            int64   `json:"published_courses"`
+	TotalStudents               int64   `json:"total_students"`
+	ActiveEnrollments           int64   `json:"active_enrollments"`
+	CompletedEnrollments        int64   `json:"completed_enrollments"`
+	AverageCompletionPercentage float64 `json:"average_completion_percentage"`
+	AverageQuizPercentage       float64 `json:"average_quiz_percentage"`
+	AssignmentSubmissions       int64   `json:"assignment_submissions"`
+	GradedAssignments           int64   `json:"graded_assignments"`
 }
 
 func Range(from, to *time.Time) (time.Time, time.Time, error) {
@@ -52,5 +69,31 @@ func (s *Service) Overview(ctx context.Context, orgID uuid.UUID, from, to time.T
 	if total > 0 {
 		rate = float64(row.CompletedEnrollments) / float64(total) * 100
 	}
-	return Overview{TotalStudents: row.TotalStudents, TotalInstructors: row.TotalInstructors, PublishedCourses: row.PublishedCourses, ActiveEnrollments: row.ActiveEnrollments, CompletedEnrollments: row.CompletedEnrollments, CompletionRate: rate, GrossRevenueMinor: row.GrossRevenueMinor, RefundAmountMinor: row.RefundAmountMinor}, nil
+	return Overview{TotalStudents: row.TotalStudents, TotalInstructors: row.TotalInstructors, PublishedCourses: row.PublishedCourses, TotalEnrollments: row.TotalEnrollments, ActiveEnrollments: row.ActiveEnrollments, CompletedEnrollments: row.CompletedEnrollments, CompletionRate: rate, PendingPayments: row.PendingPayments, PaidPayments: row.PaidPayments, FailedPayments: row.FailedPayments, RefundedPayments: row.RefundedPayments, GrossRevenueMinor: row.GrossRevenueMinor, RefundAmountMinor: row.RefundAmountMinor}, nil
+}
+
+func (s *Service) TeacherOverview(ctx context.Context, orgID, instructorID uuid.UUID, from, to time.Time) (TeacherOverview, error) {
+	row, err := s.q.TeacherOverview(ctx, data.TeacherOverviewParams{OrganizationID: orgID, InstructorID: instructorID, FromTime: pgtype.Timestamptz{Time: from, Valid: true}, ToTime: pgtype.Timestamptz{Time: to, Valid: true}})
+	if err != nil {
+		return TeacherOverview{}, err
+	}
+	average, conversionErr := row.AverageCompletionPercentage.Float64Value()
+	if conversionErr != nil {
+		return TeacherOverview{}, conversionErr
+	}
+	quizAverage, conversionErr := row.AverageQuizPercentage.Float64Value()
+	if conversionErr != nil {
+		return TeacherOverview{}, conversionErr
+	}
+	return TeacherOverview{
+		TotalCourses:                row.TotalCourses,
+		PublishedCourses:            row.PublishedCourses,
+		TotalStudents:               row.TotalStudents,
+		ActiveEnrollments:           row.ActiveEnrollments,
+		CompletedEnrollments:        row.CompletedEnrollments,
+		AverageCompletionPercentage: average.Float64,
+		AverageQuizPercentage:       quizAverage.Float64,
+		AssignmentSubmissions:       row.AssignmentSubmissions,
+		GradedAssignments:           row.GradedAssignments,
+	}, nil
 }

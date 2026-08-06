@@ -3,8 +3,8 @@ package media
 import (
 	"testing"
 
-	api "github.com/Faysal9991/edtech_Backend/internal/api"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/config"
+	api "github.com/neoscoder/lms-service/internal/api"
+	"github.com/neoscoder/lms-service/internal/platform/config"
 )
 
 func TestUploadValidation(t *testing.T) {

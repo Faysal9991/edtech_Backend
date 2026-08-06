@@ -20,6 +20,18 @@ WHERE e.student_id=sqlc.arg(student_id)
  AND (sqlc.narg(cursor_updated_at)::timestamptz IS NULL OR (e.updated_at,e.id)<(sqlc.narg(cursor_updated_at),sqlc.narg(cursor_id)::uuid))
 ORDER BY e.updated_at DESC,e.id DESC LIMIT sqlc.arg(page_size);
 
+-- name: ListAdminEnrollments :many
+SELECT e.*, c.title AS course_title, u.email AS student_email, u.display_name AS student_name
+FROM enrollments e
+JOIN courses c ON c.id=e.course_id
+JOIN users u ON u.id=e.student_id
+WHERE e.organization_id=sqlc.arg(organization_id)
+  AND (sqlc.narg(status)::text IS NULL OR e.status=sqlc.narg(status))
+  AND (sqlc.narg(course_id)::uuid IS NULL OR e.course_id=sqlc.narg(course_id))
+  AND (sqlc.narg(student_id)::uuid IS NULL OR e.student_id=sqlc.narg(student_id))
+  AND (sqlc.narg(cursor_created_at)::timestamptz IS NULL OR (e.created_at,e.id)<(sqlc.narg(cursor_created_at),sqlc.narg(cursor_id)::uuid))
+ORDER BY e.created_at DESC,e.id DESC LIMIT sqlc.arg(page_size);
+
 -- name: ListCourseEnrollments :many
 SELECT e.*,u.email,u.display_name FROM enrollments e JOIN users u ON u.id=e.student_id
 WHERE e.course_id=sqlc.arg(course_id)

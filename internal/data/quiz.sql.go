@@ -234,6 +234,61 @@ func (q *Queries) DeleteQuizQuestionOptions(ctx context.Context, questionID uuid
 	return err
 }
 
+const expireQuizAttempt = `-- name: ExpireQuizAttempt :one
+UPDATE quiz_attempts
+SET status='expired',updated_at=now()
+WHERE id=$1 AND status='in_progress'
+RETURNING id, quiz_id, enrollment_id, student_id, attempt_number, status, question_snapshot, question_order, started_at, expires_at, submitted_at, graded_at, score_points, max_points, percentage, passed, created_at, updated_at
+`
+
+func (q *Queries) ExpireQuizAttempt(ctx context.Context, id uuid.UUID) (QuizAttempt, error) {
+	row := q.db.QueryRow(ctx, expireQuizAttempt, id)
+	var i QuizAttempt
+	err := row.Scan(
+		&i.ID,
+		&i.QuizID,
+		&i.EnrollmentID,
+		&i.StudentID,
+		&i.AttemptNumber,
+		&i.Status,
+		&i.QuestionSnapshot,
+		&i.QuestionOrder,
+		&i.StartedAt,
+		&i.ExpiresAt,
+		&i.SubmittedAt,
+		&i.GradedAt,
+		&i.ScorePoints,
+		&i.MaxPoints,
+		&i.Percentage,
+		&i.Passed,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const expireStudentQuizAttempts = `-- name: ExpireStudentQuizAttempts :execrows
+UPDATE quiz_attempts
+SET status='expired',updated_at=now()
+WHERE quiz_id=$1 AND student_id=$2
+  AND status='in_progress' AND expires_at IS NOT NULL
+  AND expires_at<=$3
+`
+
+type ExpireStudentQuizAttemptsParams struct {
+	QuizID    uuid.UUID          `json:"quiz_id"`
+	StudentID uuid.UUID          `json:"student_id"`
+	ExpiredAt pgtype.Timestamptz `json:"expired_at"`
+}
+
+func (q *Queries) ExpireStudentQuizAttempts(ctx context.Context, arg ExpireStudentQuizAttemptsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, expireStudentQuizAttempts, arg.QuizID, arg.StudentID, arg.ExpiredAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getQuiz = `-- name: GetQuiz :one
 SELECT id, organization_id, course_id, lesson_id, title, instructions, status, time_limit_seconds, attempt_limit, pass_percentage, randomize_questions, randomize_options, available_from, available_until, results_visibility, is_required, created_at, updated_at FROM quizzes WHERE id=$1
 `

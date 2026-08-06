@@ -1,9 +1,9 @@
 package observability
 
 import (
-	"github.com/Faysal9991/edtech_Backend/internal/platform/config"
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/neoscoder/lms-service/internal/platform/config"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

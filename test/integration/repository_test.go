@@ -14,13 +14,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Faysal9991/edtech_Backend/internal/data"
-	platformid "github.com/Faysal9991/edtech_Backend/internal/platform/id"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/neoscoder/lms-service/internal/data"
+	identitymodule "github.com/neoscoder/lms-service/internal/modules/identity"
+	"github.com/neoscoder/lms-service/internal/platform/auth"
+	"github.com/neoscoder/lms-service/internal/platform/config"
+	platformid "github.com/neoscoder/lms-service/internal/platform/id"
 	"github.com/pressly/goose/v3"
 	"github.com/testcontainers/testcontainers-go"
 	postgrescontainer "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -34,7 +37,7 @@ func databaseForTest(t *testing.T) (context.Context, *pgxpool.Pool) {
 	gooseTable := "goose_db_version"
 	if dsn == "" {
 		testcontainers.SkipIfProviderIsNotHealthy(t)
-		container, err := postgrescontainer.Run(ctx, "postgres:16-alpine", postgrescontainer.WithDatabase("lms"), postgrescontainer.WithUsername("lms"), postgrescontainer.WithPassword("lms"), testcontainers.WithWaitStrategy(wait.ForLog("database system is ready to accept connections").WithOccurrence(2)))
+		container, err := postgrescontainer.Run(ctx, "postgres:16.14-alpine3.24", postgrescontainer.WithDatabase("lms"), postgrescontainer.WithUsername("lms"), postgrescontainer.WithPassword("lms"), testcontainers.WithWaitStrategy(wait.ForLog("database system is ready to accept connections").WithOccurrence(2)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -91,6 +94,50 @@ func databaseForTest(t *testing.T) (context.Context, *pgxpool.Pool) {
 	return ctx, pool
 }
 
+func TestFirstPartyAuthenticationRotationAndReuseDetection(t *testing.T) {
+	ctx, pool := databaseForTest(t)
+	ids := platformid.Secure{}
+	if _, err := pool.Exec(ctx, "INSERT INTO organizations(id,name,slug) VALUES($1,'LMS','lms')", ids.New()); err != nil {
+		t.Fatal(err)
+	}
+	passwordConfig := config.Password{MemoryKiB: 19 * 1024, Iterations: 2, Parallelism: 1, SaltBytes: 16, KeyBytes: 32}
+	authConfig := config.Auth{Issuer: "integration", Audience: "integration-clients", KeyID: "test", SigningKey: "01234567890123456789012345678901", AccessTTL: 5 * time.Minute, RefreshTTL: time.Hour, VerificationTTL: time.Hour, PasswordResetTTL: 15 * time.Minute}
+	service, err := identitymodule.NewService(pool, data.New(pool), ids, auth.NewPasswordHasher(passwordConfig), auth.NewJWTManager(authConfig), authConfig, "lms")
+	if err != nil {
+		t.Fatal(err)
+	}
+	registration, err := service.Register(ctx, "rotation@example.test", "correct horse battery staple", "Rotation Student", identitymodule.ClientInfo{IP: "127.0.0.1", UserAgent: "integration"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if registration.User.Status != "pending" || registration.VerificationToken == "" {
+		t.Fatalf("unexpected registration: %+v", registration)
+	}
+	if _, err = service.Login(ctx, "rotation@example.test", "correct horse battery staple", identitymodule.ClientInfo{}); !errors.Is(err, identitymodule.ErrAccountPending) {
+		t.Fatalf("unverified login should fail, got %v", err)
+	}
+	if err = service.VerifyEmail(ctx, registration.VerificationToken, identitymodule.ClientInfo{}); err != nil {
+		t.Fatal(err)
+	}
+	if err = service.VerifyEmail(ctx, registration.VerificationToken, identitymodule.ClientInfo{}); !errors.Is(err, identitymodule.ErrInvalidToken) {
+		t.Fatalf("verification token was reusable: %v", err)
+	}
+	tokens, err := service.Login(ctx, "rotation@example.test", "correct horse battery staple", identitymodule.ClientInfo{IP: "127.0.0.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotated, err := service.Refresh(ctx, tokens.RefreshToken, identitymodule.ClientInfo{IP: "127.0.0.1"})
+	if err != nil || rotated.RefreshToken == tokens.RefreshToken {
+		t.Fatalf("refresh rotation failed: %+v err=%v", rotated, err)
+	}
+	if _, err = service.Refresh(ctx, tokens.RefreshToken, identitymodule.ClientInfo{}); !errors.Is(err, identitymodule.ErrRefreshReuse) {
+		t.Fatalf("reuse was not detected: %v", err)
+	}
+	if _, err = service.Refresh(ctx, rotated.RefreshToken, identitymodule.ClientInfo{}); !errors.Is(err, identitymodule.ErrRefreshReuse) {
+		t.Fatalf("reuse did not revoke family: %v", err)
+	}
+}
+
 func numeric(value string) pgtype.Numeric {
 	var result pgtype.Numeric
 	_ = result.Scan(value)
@@ -145,6 +192,14 @@ func TestSchemaIsolationAndIdempotency(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("expected one enrollment, got %d", count)
 	}
+	firstCertificate, err := q.CreateCertificate(ctx, data.CreateCertificateParams{ID: ids.New(), OrganizationID: orgA, EnrollmentID: idsMustEnrollment(t, pool, courseID, userID), StudentID: userID, CourseID: courseID, CertificateNumber: "LMS-INTEGRATION-1", VerificationCode: "integration-verification-1", IssuedAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondCertificate, err := q.CreateCertificate(ctx, data.CreateCertificateParams{ID: ids.New(), OrganizationID: orgA, EnrollmentID: firstCertificate.EnrollmentID, StudentID: userID, CourseID: courseID, CertificateNumber: "LMS-INTEGRATION-2", VerificationCode: "integration-verification-2", IssuedAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}})
+	if err != nil || secondCertificate.ID != firstCertificate.ID {
+		t.Fatalf("certificate issuance was not idempotent: first=%s second=%s err=%v", firstCertificate.ID, secondCertificate.ID, err)
+	}
 	eventID := ids.New()
 	params := data.CreatePaymentWebhookEventParams{ID: eventID, ProviderEventID: "evt_replayed", EventType: "payment_intent.succeeded", Payload: []byte(`{}`)}
 	first, err := q.CreatePaymentWebhookEvent(ctx, params)
@@ -175,12 +230,21 @@ func TestSchemaIsolationAndIdempotency(t *testing.T) {
 		t.Fatalf("revenue trend query failed: rows=%v err=%v", trend, err)
 	}
 	var indexes int
-	if err := pool.QueryRow(ctx, "SELECT count(*) FROM pg_indexes WHERE schemaname=current_schema() AND indexname IN ('courses_org_listing_idx','enrollments_student_listing_idx','outbox_pending_idx','quizzes_course_cursor_idx','assignments_course_cursor_idx','certificates_student_cursor_idx','live_sessions_org_cursor_idx')").Scan(&indexes); err != nil {
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM pg_indexes WHERE schemaname=current_schema() AND indexname IN ('courses_org_listing_idx','enrollments_student_listing_idx','outbox_pending_idx','outbox_processing_lease_idx','quizzes_course_cursor_idx','quiz_attempts_graded_report_idx','assignments_course_cursor_idx','assignment_submissions_report_idx','certificates_student_cursor_idx','live_sessions_org_cursor_idx')").Scan(&indexes); err != nil {
 		t.Fatal(err)
 	}
-	if indexes != 7 {
+	if indexes != 10 {
 		t.Fatalf("expected critical indexes, found %d", indexes)
 	}
+}
+
+func idsMustEnrollment(t *testing.T, pool *pgxpool.Pool, courseID, studentID uuid.UUID) uuid.UUID {
+	t.Helper()
+	var enrollmentID uuid.UUID
+	if err := pool.QueryRow(context.Background(), "SELECT id FROM enrollments WHERE course_id=$1 AND student_id=$2", courseID, studentID).Scan(&enrollmentID); err != nil {
+		t.Fatal(err)
+	}
+	return enrollmentID
 }
 
 func TestConcurrencyDedupeAndAccessGuards(t *testing.T) {
@@ -243,6 +307,7 @@ func TestConcurrencyDedupeAndAccessGuards(t *testing.T) {
 	}
 
 	outbox := data.InsertOutboxEventParams{ID: ids.New(), AggregateType: "course", AggregateID: courseID, EventType: "course.test", Payload: []byte(`{"user_id":"` + ownerID.String() + `"}`), DeduplicationKey: "guard-dedupe"}
+	outboxID := outbox.ID
 	if err := q.InsertOutboxEvent(ctx, outbox); err != nil {
 		t.Fatal(err)
 	}
@@ -253,6 +318,13 @@ func TestConcurrencyDedupeAndAccessGuards(t *testing.T) {
 	var outboxCount int
 	if err := pool.QueryRow(ctx, "SELECT count(*) FROM outbox_events WHERE deduplication_key='guard-dedupe'").Scan(&outboxCount); err != nil || outboxCount != 1 {
 		t.Fatalf("outbox deduplication failed: count=%d err=%v", outboxCount, err)
+	}
+	if _, err := pool.Exec(ctx, "UPDATE outbox_events SET status='processing',claimed_at=now()-interval '11 minutes' WHERE id=$1", outboxID); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := q.ClaimOutboxEvents(ctx, 10)
+	if err != nil || len(claimed) != 1 || claimed[0].ID != outboxID {
+		t.Fatalf("stale outbox processing lease was not reclaimed: rows=%v err=%v", claimed, err)
 	}
 
 	liveParams := data.CreateLiveWebhookEventParams{ID: ids.New(), ProviderEventID: "live-replay", EventType: "participant_joined", Payload: []byte(`{}`)}

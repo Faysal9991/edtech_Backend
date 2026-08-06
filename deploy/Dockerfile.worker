@@ -1,0 +1,15 @@
+# syntax=docker/dockerfile:1.7
+FROM golang:1.26.5-alpine3.24 AS build
+WORKDIR /src
+RUN apk add --no-cache git ca-certificates
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/worker ./cmd/worker
+
+FROM alpine:3.24.1
+RUN apk add --no-cache ca-certificates tzdata ffmpeg && addgroup -S lms && adduser -S -G lms -u 10001 lms
+WORKDIR /app
+COPY --from=build /out/worker /app/worker
+USER 10001:10001
+ENTRYPOINT ["/app/worker"]

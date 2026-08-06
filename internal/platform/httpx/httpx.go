@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	api "github.com/Faysal9991/edtech_Backend/internal/api"
 	"github.com/google/uuid"
+	api "github.com/neoscoder/lms-service/internal/api"
 )
 
 const maxJSONBody = int64(1 << 20)
@@ -88,7 +88,7 @@ func PageSize(r *http.Request) (int32, error) {
 	if err != nil || n < 1 || n > 100 {
 		return 0, errors.New("limit must be between 1 and 100")
 	}
-	return int32(n), nil
+	return int32(n), nil // #nosec G109 -- n is validated to 1..100
 }
 
 func UUIDParam(raw string) (uuid.UUID, error) {

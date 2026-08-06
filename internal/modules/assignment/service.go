@@ -9,15 +9,15 @@ import (
 	"strings"
 	"time"
 
-	api "github.com/Faysal9991/edtech_Backend/internal/api"
-	"github.com/Faysal9991/edtech_Backend/internal/data"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/clock"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/database"
-	platformid "github.com/Faysal9991/edtech_Backend/internal/platform/id"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/queue"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	api "github.com/neoscoder/lms-service/internal/api"
+	"github.com/neoscoder/lms-service/internal/data"
+	"github.com/neoscoder/lms-service/internal/platform/clock"
+	"github.com/neoscoder/lms-service/internal/platform/database"
+	platformid "github.com/neoscoder/lms-service/internal/platform/id"
+	"github.com/neoscoder/lms-service/internal/platform/queue"
 )
 
 var (
@@ -76,7 +76,7 @@ func stringsValue(v *[]string) []string {
 }
 
 func validate(in api.AssignmentWrite) error {
-	if strings.TrimSpace(in.Title) == "" || in.MaximumScore <= 0 || in.PassingScore < 0 || in.PassingScore > in.MaximumScore || in.MaximumSubmissions < 1 {
+	if strings.TrimSpace(in.Title) == "" || in.MaximumScore <= 0 || in.PassingScore < 0 || in.PassingScore > in.MaximumScore || in.MaximumSubmissions < 1 || in.MaximumSubmissions > 1000 {
 		return errors.New("invalid assignment settings")
 	}
 	return nil
@@ -89,7 +89,7 @@ func (s *Service) Create(ctx context.Context, orgID, authorID uuid.UUID, in api.
 	err := database.WithinTx(ctx, s.db, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
 		var err error
-		assignment, err = q.CreateAssignment(ctx, data.CreateAssignmentParams{ID: s.ids.New(), OrganizationID: orgID, CourseID: in.CourseId, LessonID: nullableUUID(in.LessonId), Title: strings.TrimSpace(in.Title), Instructions: value(in.Instructions), DueAt: nullableTime(in.DueAt), MaximumScore: numeric(float64(in.MaximumScore)), PassingScore: numeric(float64(in.PassingScore)), AllowedFileTypes: stringsValue(in.AllowedFileTypes), MaximumSubmissions: int32(in.MaximumSubmissions), IsRequired: boolValue(in.IsRequired)})
+		assignment, err = q.CreateAssignment(ctx, data.CreateAssignmentParams{ID: s.ids.New(), OrganizationID: orgID, CourseID: in.CourseId, LessonID: nullableUUID(in.LessonId), Title: strings.TrimSpace(in.Title), Instructions: value(in.Instructions), DueAt: nullableTime(in.DueAt), MaximumScore: numeric(float64(in.MaximumScore)), PassingScore: numeric(float64(in.PassingScore)), AllowedFileTypes: stringsValue(in.AllowedFileTypes), MaximumSubmissions: int32(in.MaximumSubmissions), IsRequired: boolValue(in.IsRequired)}) // #nosec G115 -- validated to 1..1000
 		if err != nil {
 			return err
 		}
@@ -109,7 +109,7 @@ func (s *Service) Update(ctx context.Context, id, authorID uuid.UUID, in api.Ass
 		if err != nil {
 			return err
 		}
-		assignment, err = q.UpdateAssignment(ctx, data.UpdateAssignmentParams{Title: strings.TrimSpace(in.Title), Instructions: value(in.Instructions), DueAt: nullableTime(in.DueAt), MaximumScore: numeric(float64(in.MaximumScore)), PassingScore: numeric(float64(in.PassingScore)), AllowedFileTypes: stringsValue(in.AllowedFileTypes), MaximumSubmissions: int32(in.MaximumSubmissions), IsRequired: boolValue(in.IsRequired), ID: id})
+		assignment, err = q.UpdateAssignment(ctx, data.UpdateAssignmentParams{Title: strings.TrimSpace(in.Title), Instructions: value(in.Instructions), DueAt: nullableTime(in.DueAt), MaximumScore: numeric(float64(in.MaximumScore)), PassingScore: numeric(float64(in.PassingScore)), AllowedFileTypes: stringsValue(in.AllowedFileTypes), MaximumSubmissions: int32(in.MaximumSubmissions), IsRequired: boolValue(in.IsRequired), ID: id}) // #nosec G115 -- validated to 1..1000
 		if err != nil || in.AttachmentAssetIds == nil {
 			return err
 		}

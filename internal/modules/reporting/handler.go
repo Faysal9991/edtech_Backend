@@ -4,10 +4,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Faysal9991/edtech_Backend/internal/data"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/auth"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/httpx"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/neoscoder/lms-service/internal/data"
+	"github.com/neoscoder/lms-service/internal/platform/auth"
+	"github.com/neoscoder/lms-service/internal/platform/httpx"
 )
 
 type Handler struct {
@@ -48,6 +48,24 @@ func (h *Handler) Overview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := h.s.Overview(r.Context(), m.OrganizationID, from, to)
+	if err != nil {
+		httpx.Problem(w, r, 500, "Report Failed", err.Error())
+		return
+	}
+	httpx.JSON(w, 200, result)
+}
+func (h *Handler) TeacherOverview(w http.ResponseWriter, r *http.Request) {
+	membership, ok := auth.MembershipFrom(r.Context())
+	if !ok {
+		httpx.Problem(w, r, 403, "Organization Required", "an active organization membership is required")
+		return
+	}
+	principal, _ := auth.PrincipalFrom(r.Context())
+	from, to, valid := parseRange(w, r)
+	if !valid {
+		return
+	}
+	result, err := h.s.TeacherOverview(r.Context(), membership.OrganizationID, principal.UserID, from, to)
 	if err != nil {
 		httpx.Problem(w, r, 500, "Report Failed", err.Error())
 		return

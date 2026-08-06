@@ -11,22 +11,23 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
-	api "github.com/Faysal9991/edtech_Backend/internal/api"
-	"github.com/Faysal9991/edtech_Backend/internal/data"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/clock"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/config"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/database"
-	platformid "github.com/Faysal9991/edtech_Backend/internal/platform/id"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/queue"
-	"github.com/Faysal9991/edtech_Backend/internal/platform/storage"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	api "github.com/neoscoder/lms-service/internal/api"
+	"github.com/neoscoder/lms-service/internal/data"
+	"github.com/neoscoder/lms-service/internal/platform/clock"
+	"github.com/neoscoder/lms-service/internal/platform/config"
+	"github.com/neoscoder/lms-service/internal/platform/database"
+	platformid "github.com/neoscoder/lms-service/internal/platform/id"
+	"github.com/neoscoder/lms-service/internal/platform/queue"
+	"github.com/neoscoder/lms-service/internal/platform/storage"
 )
 
 var (
@@ -227,13 +228,13 @@ func (s *Service) Process(ctx context.Context, assetID uuid.UUID) error {
 	if err != nil {
 		return failure(err)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 	temp, err := os.CreateTemp("", "lms-media-*")
 	if err != nil {
 		return failure(err)
 	}
 	path := temp.Name()
-	defer os.Remove(path)
+	defer func() { _ = os.Remove(path) }()
 	hasher := sha256.New()
 	copied, err := io.Copy(io.MultiWriter(temp, hasher), io.LimitReader(reader, asset.SizeBytes+1))
 	closeErr := temp.Close()
@@ -253,6 +254,8 @@ func (s *Service) Process(ctx context.Context, assetID uuid.UUID) error {
 	metadata := map[string]any{}
 	switch asset.Kind {
 	case "video":
+		// The executable name is fixed and path is an internally-created temporary file.
+		// #nosec G204 -- no shell or user-controlled executable is involved
 		command := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-show_entries", "format=duration:stream=codec_type,width,height", "-of", "json", path)
 		output, err := command.Output()
 		if err != nil {
@@ -263,7 +266,7 @@ func (s *Service) Process(ctx context.Context, assetID uuid.UUID) error {
 			return failure(err)
 		}
 		var seconds float64
-		if _, err := fmt.Sscanf(probe.Format.Duration, "%f", &seconds); err == nil && seconds >= 0 {
+		if _, err := fmt.Sscanf(probe.Format.Duration, "%f", &seconds); err == nil && seconds >= 0 && seconds <= math.MaxInt32 {
 			duration = pgtype.Int4{Int32: int32(seconds), Valid: true}
 		}
 		for _, stream := range probe.Streams {
@@ -274,26 +277,30 @@ func (s *Service) Process(ctx context.Context, assetID uuid.UUID) error {
 			}
 		}
 		thumbPath := path + ".jpg"
-		defer os.Remove(thumbPath)
+		defer func() { _ = os.Remove(thumbPath) }()
+		// #nosec G204 -- fixed executable/arguments with internally-created temp paths
 		if err := exec.CommandContext(ctx, "ffmpeg", "-y", "-ss", "00:00:01", "-i", path, "-frames:v", "1", "-vf", "scale=640:-2", thumbPath).Run(); err != nil {
 			return failure(fmt.Errorf("create video thumbnail: %w", err))
 		}
+		// #nosec G304 -- thumbPath derives exclusively from os.CreateTemp above
 		thumb, err := os.Open(thumbPath)
 		if err != nil {
 			return failure(err)
 		}
 		stat, err := thumb.Stat()
 		if err != nil {
-			thumb.Close()
+			_ = thumb.Close()
 			return failure(err)
 		}
 		thumbID := s.ids.New()
 		thumbKey := fmt.Sprintf("organizations/%s/media-thumbnails/%s.jpg", asset.OrganizationID, thumbID)
 		if _, err := s.store.Put(ctx, thumbKey, "image/jpeg", thumb, stat.Size()); err != nil {
-			thumb.Close()
+			_ = thumb.Close()
 			return failure(err)
 		}
-		thumb.Close()
+		if err := thumb.Close(); err != nil {
+			return failure(err)
+		}
 		if _, err := s.q.CreateMediaAsset(ctx, data.CreateMediaAssetParams{ID: thumbID, OrganizationID: asset.OrganizationID, OwnerUserID: asset.OwnerUserID, Kind: "image", StorageKey: thumbKey, OriginalFilename: asset.ID.String() + "-thumbnail.jpg", ContentType: "image/jpeg", SizeBytes: stat.Size(), ChecksumSha256: pgtype.Text{}}); err != nil {
 			return failure(err)
 		}
@@ -302,36 +309,51 @@ func (s *Service) Process(ctx context.Context, assetID uuid.UUID) error {
 		}
 		metadata["thumbnail_asset_id"] = thumbID.String()
 	case "pdf":
+		// #nosec G304 -- path derives exclusively from os.CreateTemp above
 		file, err := os.Open(path)
 		if err != nil {
 			return failure(err)
 		}
 		header := make([]byte, 5)
-		_, err = io.ReadFull(file, header)
-		file.Close()
-		if err != nil || string(header) != "%PDF-" {
+		_, readErr := io.ReadFull(file, header)
+		closeErr := file.Close()
+		if closeErr != nil {
+			return failure(closeErr)
+		}
+		if readErr != nil || string(header) != "%PDF-" {
 			return failure(errors.New("invalid PDF signature"))
 		}
 	case "image":
+		// #nosec G304 -- path derives exclusively from os.CreateTemp above
 		file, err := os.Open(path)
 		if err != nil {
 			return failure(err)
 		}
 		cfg, _, err := image.DecodeConfig(file)
-		file.Close()
+		closeErr := file.Close()
+		if closeErr != nil {
+			return failure(closeErr)
+		}
 		if err != nil {
 			return failure(fmt.Errorf("decode image: %w", err))
 		}
-		width = pgtype.Int4{Int32: int32(cfg.Width), Valid: true}
-		height = pgtype.Int4{Int32: int32(cfg.Height), Valid: true}
+		if cfg.Width < 1 || cfg.Width > math.MaxInt32 || cfg.Height < 1 || cfg.Height > math.MaxInt32 {
+			return failure(errors.New("image dimensions exceed the supported range"))
+		}
+		width = pgtype.Int4{Int32: int32(cfg.Width), Valid: true}   // #nosec G115 -- dimensions are range checked
+		height = pgtype.Int4{Int32: int32(cfg.Height), Valid: true} // #nosec G115 -- dimensions are range checked
 	case "assignment":
+		// #nosec G304 -- path derives exclusively from os.CreateTemp above
 		file, err := os.Open(path)
 		if err != nil {
 			return failure(err)
 		}
 		header := make([]byte, 8192)
 		read, readErr := file.Read(header)
-		file.Close()
+		closeErr := file.Close()
+		if closeErr != nil {
+			return failure(closeErr)
+		}
 		if readErr != nil && !errors.Is(readErr, io.EOF) {
 			return failure(readErr)
 		}
@@ -342,19 +364,27 @@ func (s *Service) Process(ctx context.Context, assetID uuid.UUID) error {
 				return failure(errors.New("invalid PDF signature"))
 			}
 		case "image/jpeg", "image/png":
+			// #nosec G304 -- path derives exclusively from os.CreateTemp above
 			file, err := os.Open(path)
 			if err != nil {
 				return failure(err)
 			}
 			cfg, _, err := image.DecodeConfig(file)
-			file.Close()
+			closeErr := file.Close()
+			if closeErr != nil {
+				return failure(closeErr)
+			}
 			if err != nil {
 				return failure(fmt.Errorf("decode assignment image: %w", err))
 			}
-			width = pgtype.Int4{Int32: int32(cfg.Width), Valid: true}
-			height = pgtype.Int4{Int32: int32(cfg.Height), Valid: true}
+			if cfg.Width < 1 || cfg.Width > math.MaxInt32 || cfg.Height < 1 || cfg.Height > math.MaxInt32 {
+				return failure(errors.New("assignment image dimensions exceed the supported range"))
+			}
+			width = pgtype.Int4{Int32: int32(cfg.Width), Valid: true}   // #nosec G115 -- dimensions are range checked
+			height = pgtype.Int4{Int32: int32(cfg.Height), Valid: true} // #nosec G115 -- dimensions are range checked
 		case "application/zip":
-			if len(header) < 4 || !(bytes.Equal(header[:4], []byte{'P', 'K', 3, 4}) || bytes.Equal(header[:4], []byte{'P', 'K', 5, 6}) || bytes.Equal(header[:4], []byte{'P', 'K', 7, 8})) {
+			validZIP := len(header) >= 4 && (bytes.Equal(header[:4], []byte{'P', 'K', 3, 4}) || bytes.Equal(header[:4], []byte{'P', 'K', 5, 6}) || bytes.Equal(header[:4], []byte{'P', 'K', 7, 8}))
+			if !validZIP {
 				return failure(errors.New("invalid ZIP signature"))
 			}
 		case "text/plain":

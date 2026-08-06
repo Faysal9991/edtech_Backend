@@ -17,6 +17,7 @@ type Querier interface {
 	AddSubmissionAsset(ctx context.Context, arg AddSubmissionAssetParams) error
 	AssessmentReport(ctx context.Context, arg AssessmentReportParams) ([]AssessmentReportRow, error)
 	AssignCourseInstructor(ctx context.Context, arg AssignCourseInstructorParams) error
+	AssignGlobalRole(ctx context.Context, arg AssignGlobalRoleParams) error
 	AssignMembershipRole(ctx context.Context, arg AssignMembershipRoleParams) error
 	CalculateLessonCompletion(ctx context.Context, arg CalculateLessonCompletionParams) (CalculateLessonCompletionRow, error)
 	CanUserAccessMedia(ctx context.Context, arg CanUserAccessMediaParams) (bool, error)
@@ -25,6 +26,8 @@ type Querier interface {
 	CompleteUploadIntent(ctx context.Context, id uuid.UUID) (UploadIntent, error)
 	CompletionByCourse(ctx context.Context, arg CompletionByCourseParams) ([]CompletionByCourseRow, error)
 	CompletionRequirements(ctx context.Context, arg CompletionRequirementsParams) (CompletionRequirementsRow, error)
+	ConsumeEmailVerificationToken(ctx context.Context, tokenHash []byte) (uuid.UUID, error)
+	ConsumePasswordResetToken(ctx context.Context, tokenHash []byte) (uuid.UUID, error)
 	CountCourseInstructors(ctx context.Context, courseID uuid.UUID) (int64, error)
 	CoursePublishFacts(ctx context.Context, id uuid.UUID) (CoursePublishFactsRow, error)
 	CreateAssignment(ctx context.Context, arg CreateAssignmentParams) (Assignment, error)
@@ -33,6 +36,7 @@ type Querier interface {
 	CreateCertificate(ctx context.Context, arg CreateCertificateParams) (Certificate, error)
 	CreateCompletionSnapshot(ctx context.Context, arg CreateCompletionSnapshotParams) (CourseCompletionSnapshot, error)
 	CreateCourse(ctx context.Context, arg CreateCourseParams) (Course, error)
+	CreateEmailVerificationToken(ctx context.Context, arg CreateEmailVerificationTokenParams) error
 	CreateEnrollment(ctx context.Context, arg CreateEnrollmentParams) (Enrollment, error)
 	CreateInvitation(ctx context.Context, arg CreateInvitationParams) (UserInvitation, error)
 	CreateLesson(ctx context.Context, arg CreateLessonParams) (Lesson, error)
@@ -46,18 +50,27 @@ type Querier interface {
 	CreateOrder(ctx context.Context, arg CreateOrderParams) (Order, error)
 	CreateOrderItem(ctx context.Context, arg CreateOrderItemParams) (OrderItem, error)
 	CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error)
+	CreatePasswordResetToken(ctx context.Context, arg CreatePasswordResetTokenParams) error
+	CreatePasswordUser(ctx context.Context, arg CreatePasswordUserParams) (User, error)
 	CreatePaymentTransaction(ctx context.Context, arg CreatePaymentTransactionParams) (PaymentTransaction, error)
 	CreatePaymentWebhookEvent(ctx context.Context, arg CreatePaymentWebhookEventParams) (int64, error)
 	CreateQuiz(ctx context.Context, arg CreateQuizParams) (Quiz, error)
 	CreateQuizAttempt(ctx context.Context, arg CreateQuizAttemptParams) (QuizAttempt, error)
 	CreateQuizOption(ctx context.Context, arg CreateQuizOptionParams) (QuizQuestionOption, error)
 	CreateQuizQuestion(ctx context.Context, arg CreateQuizQuestionParams) (QuizQuestion, error)
+	CreateRefreshSession(ctx context.Context, arg CreateRefreshSessionParams) (RefreshSession, error)
 	CreateRefund(ctx context.Context, arg CreateRefundParams) (Refund, error)
+	CreateStudentProfile(ctx context.Context, userID uuid.UUID) error
+	CreateTeacherProfile(ctx context.Context, userID uuid.UUID) error
 	CreateUploadIntent(ctx context.Context, arg CreateUploadIntentParams) (UploadIntent, error)
+	CreateUserProfile(ctx context.Context, arg CreateUserProfileParams) error
+	DeleteActiveEmailVerificationTokens(ctx context.Context, userID uuid.UUID) error
+	DeleteActivePasswordResetTokens(ctx context.Context, userID uuid.UUID) error
 	DeleteAssignment(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteAssignmentAssets(ctx context.Context, assignmentID uuid.UUID) error
 	DeleteCategory(ctx context.Context, arg DeleteCategoryParams) (int64, error)
 	DeleteDeviceTokenByID(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteGlobalRoles(ctx context.Context, userID uuid.UUID) error
 	DeleteLesson(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteMembershipRoles(ctx context.Context, membershipID uuid.UUID) error
 	DeleteModule(ctx context.Context, id uuid.UUID) (int64, error)
@@ -67,7 +80,10 @@ type Querier interface {
 	DeleteSubmissionAssets(ctx context.Context, submissionID uuid.UUID) error
 	EnrollmentTrend(ctx context.Context, arg EnrollmentTrendParams) ([]EnrollmentTrendRow, error)
 	ExpireDueEnrollments(ctx context.Context, limit int32) ([]uuid.UUID, error)
+	ExpireQuizAttempt(ctx context.Context, id uuid.UUID) (QuizAttempt, error)
+	ExpireStudentQuizAttempts(ctx context.Context, arg ExpireStudentQuizAttemptsParams) (int64, error)
 	GetActiveMembership(ctx context.Context, arg GetActiveMembershipParams) (GetActiveMembershipRow, error)
+	GetAdminUser(ctx context.Context, id uuid.UUID) (GetAdminUserRow, error)
 	GetAssignment(ctx context.Context, id uuid.UUID) (Assignment, error)
 	GetAssignmentSubmission(ctx context.Context, id uuid.UUID) (AssignmentSubmission, error)
 	GetAssignmentSubmissionForUpdate(ctx context.Context, id uuid.UUID) (AssignmentSubmission, error)
@@ -93,11 +109,14 @@ type Querier interface {
 	GetOrderByUserIdempotency(ctx context.Context, arg GetOrderByUserIdempotencyParams) (GetOrderByUserIdempotencyRow, error)
 	GetOrderForUpdate(ctx context.Context, id uuid.UUID) (Order, error)
 	GetOrganization(ctx context.Context, id uuid.UUID) (Organization, error)
+	GetOrganizationBySlug(ctx context.Context, slug string) (Organization, error)
+	GetPublishedCourseBySlug(ctx context.Context, slug string) (Course, error)
 	GetQuiz(ctx context.Context, id uuid.UUID) (Quiz, error)
 	GetQuizAnswerByQuestion(ctx context.Context, arg GetQuizAnswerByQuestionParams) (QuizAnswer, error)
 	GetQuizAttempt(ctx context.Context, id uuid.UUID) (QuizAttempt, error)
 	GetQuizAttemptForUpdate(ctx context.Context, id uuid.UUID) (QuizAttempt, error)
 	GetQuizQuestion(ctx context.Context, id uuid.UUID) (QuizQuestion, error)
+	GetRefreshSessionForUpdate(ctx context.Context, tokenHash []byte) (RefreshSession, error)
 	GetRoleByCode(ctx context.Context, code string) (Role, error)
 	GetSuccessfulPaymentForOrder(ctx context.Context, orderID uuid.UUID) (PaymentTransaction, error)
 	GetSuperAdminRoleForUser(ctx context.Context, userID uuid.UUID) (bool, error)
@@ -106,11 +125,16 @@ type Querier interface {
 	GetUser(ctx context.Context, id uuid.UUID) (User, error)
 	GetUserByEmail(ctx context.Context, lower string) (User, error)
 	GetUserByFirebaseUID(ctx context.Context, firebaseUid string) (User, error)
+	GetUserProfile(ctx context.Context, id uuid.UUID) (GetUserProfileRow, error)
 	GradeQuizAnswer(ctx context.Context, arg GradeQuizAnswerParams) (QuizAnswer, error)
 	HasOrganizationRole(ctx context.Context, arg HasOrganizationRoleParams) (bool, error)
 	InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) error
 	InsertOutboxEvent(ctx context.Context, arg InsertOutboxEventParams) error
+	InsertSecurityAudit(ctx context.Context, arg InsertSecurityAuditParams) error
 	IsCourseInstructor(ctx context.Context, arg IsCourseInstructorParams) (bool, error)
+	ListAdminEnrollments(ctx context.Context, arg ListAdminEnrollmentsParams) ([]ListAdminEnrollmentsRow, error)
+	ListAdminPaymentOrders(ctx context.Context, arg ListAdminPaymentOrdersParams) ([]ListAdminPaymentOrdersRow, error)
+	ListAdminUsers(ctx context.Context, arg ListAdminUsersParams) ([]ListAdminUsersRow, error)
 	ListAssignmentAssetIDs(ctx context.Context, assignmentID uuid.UUID) ([]uuid.UUID, error)
 	ListAssignmentSubmissions(ctx context.Context, arg ListAssignmentSubmissionsParams) ([]AssignmentSubmission, error)
 	ListCategories(ctx context.Context, arg ListCategoriesParams) ([]CourseCategory, error)
@@ -121,6 +145,7 @@ type Querier interface {
 	ListDueAssignmentReminders(ctx context.Context, limit int32) ([]ListDueAssignmentRemindersRow, error)
 	ListDueLiveReminders(ctx context.Context, limit int32) ([]ListDueLiveRemindersRow, error)
 	ListEnrollmentProgress(ctx context.Context, arg ListEnrollmentProgressParams) ([]ListEnrollmentProgressRow, error)
+	ListGlobalRoleCodes(ctx context.Context, userID uuid.UUID) ([]string, error)
 	ListLiveSessions(ctx context.Context, arg ListLiveSessionsParams) ([]LiveSession, error)
 	ListManagedCourses(ctx context.Context, arg ListManagedCoursesParams) ([]Course, error)
 	ListMembershipRoleCodes(ctx context.Context, membershipID uuid.UUID) ([]string, error)
@@ -143,17 +168,25 @@ type Querier interface {
 	LiveAttendanceReport(ctx context.Context, arg LiveAttendanceReportParams) ([]LiveAttendanceReportRow, error)
 	MarkAllNotificationsRead(ctx context.Context, userID uuid.UUID) (int64, error)
 	MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) (Notification, error)
+	MarkRefreshSessionRotated(ctx context.Context, id uuid.UUID) error
 	MyResults(ctx context.Context, arg MyResultsParams) ([]MyResultsRow, error)
 	NextAssignmentSubmissionNumber(ctx context.Context, arg NextAssignmentSubmissionNumberParams) (int32, error)
 	NextQuizAttemptNumber(ctx context.Context, arg NextQuizAttemptNumberParams) (int32, error)
 	NotificationUnreadCount(ctx context.Context, userID uuid.UUID) (int64, error)
 	OrganizationOverview(ctx context.Context, arg OrganizationOverviewParams) (OrganizationOverviewRow, error)
+	RecordFailedLogin(ctx context.Context, arg RecordFailedLoginParams) (RecordFailedLoginRow, error)
+	RecordSuccessfulLogin(ctx context.Context, id uuid.UUID) (User, error)
 	RegisterDeviceToken(ctx context.Context, arg RegisterDeviceTokenParams) (DeviceToken, error)
 	RemoveCourseInstructor(ctx context.Context, arg RemoveCourseInstructorParams) (int64, error)
 	RemoveDeviceToken(ctx context.Context, arg RemoveDeviceTokenParams) (int64, error)
+	RemoveDeviceTokenByHash(ctx context.Context, arg RemoveDeviceTokenByHashParams) (int64, error)
+	RemoveGlobalRole(ctx context.Context, arg RemoveGlobalRoleParams) (int64, error)
 	ResumeLearning(ctx context.Context, studentID uuid.UUID) (ResumeLearningRow, error)
 	RevenueByCourse(ctx context.Context, arg RevenueByCourseParams) ([]RevenueByCourseRow, error)
 	RevenueTrend(ctx context.Context, arg RevenueTrendParams) ([]RevenueTrendRow, error)
+	RevokeAllRefreshSessions(ctx context.Context, userID uuid.UUID) (int64, error)
+	RevokeRefreshFamilyForReuse(ctx context.Context, familyID uuid.UUID) error
+	RevokeRefreshSession(ctx context.Context, tokenHash []byte) (int64, error)
 	SetAssignmentStatus(ctx context.Context, arg SetAssignmentStatusParams) (Assignment, error)
 	SetAssignmentSubmissionStatus(ctx context.Context, arg SetAssignmentSubmissionStatusParams) (AssignmentSubmission, error)
 	SetCertificateReady(ctx context.Context, arg SetCertificateReadyParams) (Certificate, error)
@@ -166,13 +199,17 @@ type Querier interface {
 	SetNotificationDeliveryResult(ctx context.Context, arg SetNotificationDeliveryResultParams) (NotificationDelivery, error)
 	SetOrderPaymentIntent(ctx context.Context, arg SetOrderPaymentIntentParams) (Order, error)
 	SetOrderStatus(ctx context.Context, arg SetOrderStatusParams) (Order, error)
+	SetOutboxDeadLetter(ctx context.Context, arg SetOutboxDeadLetterParams) (OutboxEvent, error)
 	SetOutboxFailed(ctx context.Context, arg SetOutboxFailedParams) (OutboxEvent, error)
 	SetOutboxPublished(ctx context.Context, id uuid.UUID) (OutboxEvent, error)
 	SetQuizStatus(ctx context.Context, arg SetQuizStatusParams) (Quiz, error)
+	SetUserPassword(ctx context.Context, arg SetUserPasswordParams) (User, error)
+	SetUserStatus(ctx context.Context, arg SetUserStatusParams) (User, error)
 	StartAttendanceInterval(ctx context.Context, arg StartAttendanceIntervalParams) (int64, error)
 	SubmitAssignmentSubmission(ctx context.Context, arg SubmitAssignmentSubmissionParams) (AssignmentSubmission, error)
 	SubmitQuizAttempt(ctx context.Context, arg SubmitQuizAttemptParams) (QuizAttempt, error)
 	SumSucceededRefunds(ctx context.Context, orderID uuid.UUID) (int64, error)
+	TeacherOverview(ctx context.Context, arg TeacherOverviewParams) (TeacherOverviewRow, error)
 	UpdateAssignment(ctx context.Context, arg UpdateAssignmentParams) (Assignment, error)
 	UpdateAssignmentSubmissionDraft(ctx context.Context, arg UpdateAssignmentSubmissionDraftParams) (AssignmentSubmission, error)
 	UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (CourseCategory, error)
@@ -184,11 +221,16 @@ type Querier interface {
 	UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) (Organization, error)
 	UpdateQuiz(ctx context.Context, arg UpdateQuizParams) (Quiz, error)
 	UpdateQuizQuestion(ctx context.Context, arg UpdateQuizQuestionParams) (QuizQuestion, error)
+	UpdateUserDisplayName(ctx context.Context, arg UpdateUserDisplayNameParams) error
+	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) error
 	UpsertAssignmentGrade(ctx context.Context, arg UpsertAssignmentGradeParams) (Grade, error)
 	UpsertLessonProgress(ctx context.Context, arg UpsertLessonProgressParams) (LessonProgress, error)
 	UpsertQuizAnswer(ctx context.Context, arg UpsertQuizAnswerParams) (QuizAnswer, error)
+	UpsertTeacherProfile(ctx context.Context, arg UpsertTeacherProfileParams) error
 	UpsertUserByFirebaseUID(ctx context.Context, arg UpsertUserByFirebaseUIDParams) (User, error)
+	UserHasGlobalRole(ctx context.Context, arg UserHasGlobalRoleParams) (bool, error)
 	VerifyCertificate(ctx context.Context, verificationCode string) (VerifyCertificateRow, error)
+	VerifyUserEmail(ctx context.Context, id uuid.UUID) (User, error)
 }
 
 var _ Querier = (*Queries)(nil)
